@@ -26,6 +26,10 @@ pkgs.rustPlatform.buildRustPackage {
 
   buildInputs = [ pkgs.dbus ];
 
+  postInstall = ''
+    install -Dm644 crates/subportald/subportald.desktop $out/share/applications/subportald.desktop
+  '';
+
   meta = {
     description = "subportal client daemon - forwards desktop requests from remote servers";
     homepage = "https://git.ntd.one/zimbatm/subportal";

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Subportal Daemon
+Comment=Forwards desktop requests from remote servers via SSH
+Exec=subportald
+Icon=network-server
+NoDisplay=true
+Categories=Network;
