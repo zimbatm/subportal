@@ -1,3 +1,8 @@
+//! Request dispatch for the subportal daemon.
+//!
+//! Maps each incoming [`Request`] variant to the corresponding
+//! [`crate::portal`] function and returns the protocol response or error.
+
 use subportal_lib::consts::VERSION;
 use subportal_lib::protocol::{Request, Response, SubportalError};
 use tracing::{info, warn};

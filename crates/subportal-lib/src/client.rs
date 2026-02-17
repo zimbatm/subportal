@@ -1,5 +1,15 @@
+//! TCP client for sending requests to the subportal daemon.
+//!
+//! The [`Client`] opens a new TCP connection for each request (one-shot
+//! pattern), sends a Varlink JSON message, and reads the response. If the
+//! daemon is unreachable, all calls return [`SubportalError::NoClient`].
+//!
+//! The target port is read from the `SUBPORTAL_PORT` environment variable,
+//! falling back to [`crate::consts::DEFAULT_PORT`].
+
 use std::net::SocketAddr;
 
+use tokio::io::BufReader;
 use tokio::net::TcpStream;
 
 use crate::consts::{DEFAULT_PORT, PORT_ENV};
@@ -24,6 +34,11 @@ impl Client {
         }
     }
 
+    /// Create a new client that connects to the given address.
+    pub fn with_addr(addr: SocketAddr) -> Self {
+        Self { addr }
+    }
+
     /// Send a request and receive the response. Opens a new TCP connection each time.
     /// Returns `SubportalError::NoClient` if the daemon is unreachable.
     pub async fn call(&self, request: &Request) -> Result<Response, SubportalError> {
@@ -34,7 +49,7 @@ impl Client {
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
-        let varlink_resp: VarlinkResponse = read_message(&mut stream)
+        let varlink_resp: VarlinkResponse = read_message(&mut BufReader::new(&mut stream))
             .await
             .map_err(|_| SubportalError::NoClient)?;
 

@@ -1,5 +1,13 @@
+//! TCP server that accepts Varlink requests from subportal clients.
+//!
+//! The [`Server`] binds to a localhost port and accepts one connection at a
+//! time via [`Server::accept`]. Each accepted connection yields a parsed
+//! [`Request`] and a [`Responder`] that the caller uses to send back either
+//! a success [`Response`] or a [`SubportalError`].
+
 use std::net::SocketAddr;
 
+use tokio::io::BufReader;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::info;
 
@@ -27,6 +35,11 @@ impl Server {
         Ok(Self { listener })
     }
 
+    /// Return the local address the server is bound to.
+    pub fn local_addr(&self) -> anyhow::Result<SocketAddr> {
+        Ok(self.listener.local_addr()?)
+    }
+
     /// Bind using the default port.
     pub async fn bind_default() -> anyhow::Result<Self> {
         Self::bind(DEFAULT_PORT).await
@@ -37,7 +50,7 @@ impl Server {
         let (mut stream, peer) = self.listener.accept().await?;
         tracing::debug!("connection from {peer}");
 
-        let varlink_req: VarlinkRequest = read_message(&mut stream).await?;
+        let varlink_req: VarlinkRequest = read_message(&mut BufReader::new(&mut stream)).await?;
         let request = Request::from_varlink(&varlink_req)?;
 
         Ok((request, Responder { stream }))

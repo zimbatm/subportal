@@ -1,3 +1,9 @@
+//! xdg-open -- drop-in replacement that forwards to subportal.
+//!
+//! When placed earlier in `$PATH` than the real `xdg-open`, this binary
+//! transparently forwards URL and file open requests through the subportal
+//! tunnel to the client's desktop.
+
 use std::path::Path;
 use std::process::ExitCode;
 

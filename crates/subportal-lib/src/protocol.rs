@@ -1,5 +1,12 @@
+//! Varlink protocol types and wire I/O.
+//!
+//! This module defines the typed request/response enums ([`Request`],
+//! [`Response`]), the corresponding Varlink wire types ([`VarlinkRequest`],
+//! [`VarlinkResponse`]), domain errors ([`SubportalError`]), and async
+//! functions for reading/writing NUL-delimited JSON messages over TCP.
+
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::consts::MAX_MESSAGE_SIZE;
@@ -11,6 +18,7 @@ const NUL: u8 = 0;
 // Wire-level types (Varlink JSON framing)
 // ---------------------------------------------------------------------------
 
+/// A raw Varlink request as it appears on the wire.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VarlinkRequest {
     pub method: String,
@@ -18,6 +26,7 @@ pub struct VarlinkRequest {
     pub parameters: serde_json::Value,
 }
 
+/// A raw Varlink response as it appears on the wire.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VarlinkResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,17 +39,25 @@ pub struct VarlinkResponse {
 // Typed request / response enums
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+/// A typed subportal request.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Request {
+    /// Check connectivity and discover the daemon's capabilities.
     Ping,
+    /// Open a URI in the client's default application.
     OpenURI { uri: String },
+    /// Transfer a file (base64-encoded) and open it on the client.
     OpenFile { name: String, mime: String, content: String },
+    /// Show a desktop notification on the client.
     Notify { title: String, body: Option<String>, urgency: Option<String>, icon: Option<String> },
 }
 
-#[derive(Debug, Clone)]
+/// A typed subportal response.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Response {
+    /// Reply to a [`Request::Ping`] with capabilities and version.
     Ping { capabilities: Vec<String>, version: String },
+    /// Generic success for non-Ping requests.
     Ok,
 }
 
@@ -48,7 +65,8 @@ pub enum Response {
 // Error types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, thiserror::Error)]
+/// Errors that can be returned by the subportal protocol.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SubportalError {
     #[error("user denied the request")]
     UserDenied,
@@ -195,19 +213,21 @@ impl SubportalError {
 // Wire I/O: read/write NUL-delimited JSON over TCP
 // ---------------------------------------------------------------------------
 
-/// Read a NUL-delimited JSON message from a TCP stream.
-pub async fn read_message<T: serde::de::DeserializeOwned>(stream: &mut TcpStream) -> anyhow::Result<T> {
+/// Read a NUL-delimited JSON message from a buffered reader.
+pub async fn read_message<T: serde::de::DeserializeOwned>(
+    reader: &mut (impl tokio::io::AsyncBufRead + Unpin),
+) -> anyhow::Result<T> {
     let mut buf = Vec::new();
-    loop {
-        let byte = stream.read_u8().await?;
-        if byte == NUL {
-            break;
-        }
-        buf.push(byte);
-        if buf.len() > MAX_MESSAGE_SIZE {
-            anyhow::bail!("message exceeds maximum size ({MAX_MESSAGE_SIZE} bytes)");
-        }
+    reader.take(MAX_MESSAGE_SIZE as u64 + 1).read_until(NUL, &mut buf).await?;
+
+    if buf.last() == Some(&NUL) {
+        buf.pop(); // remove the NUL delimiter
+    } else if buf.len() > MAX_MESSAGE_SIZE {
+        anyhow::bail!("message exceeds maximum size ({MAX_MESSAGE_SIZE} bytes)");
+    } else {
+        anyhow::bail!("connection closed before NUL delimiter");
     }
+
     let msg = serde_json::from_slice(&buf)?;
     Ok(msg)
 }
@@ -219,4 +239,289 @@ pub async fn write_message<T: Serialize>(stream: &mut TcpStream, msg: &T) -> any
     stream.write_u8(NUL).await?;
     stream.flush().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+
+    // -----------------------------------------------------------------------
+    // Tier 1 -- Protocol unit tests (no I/O)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn request_ping_round_trip() {
+        let req = Request::Ping;
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.Ping");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, Request::Ping);
+    }
+
+    #[test]
+    fn request_open_uri_round_trip() {
+        let req = Request::OpenURI {
+            uri: "https://example.com".into(),
+        };
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.OpenURI");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_open_file_round_trip() {
+        let req = Request::OpenFile {
+            name: "test.txt".into(),
+            mime: "text/plain".into(),
+            content: "aGVsbG8=".into(),
+        };
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.OpenFile");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_notify_round_trip_full() {
+        let req = Request::Notify {
+            title: "Alert".into(),
+            body: Some("Something happened".into()),
+            urgency: Some("critical".into()),
+            icon: Some("dialog-warning".into()),
+        };
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.Notify");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_notify_round_trip_minimal() {
+        let req = Request::Notify {
+            title: "Hello".into(),
+            body: None,
+            urgency: None,
+            icon: None,
+        };
+        let vr = req.to_varlink();
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn response_ping_to_varlink() {
+        let resp = Response::Ping {
+            capabilities: vec!["open_uri".into(), "notify".into()],
+            version: "0.1.0".into(),
+        };
+        let vr = resp.to_varlink();
+        let params = vr.parameters.unwrap();
+        assert!(vr.error.is_none());
+        assert_eq!(params["version"], "0.1.0");
+        let caps = params["capabilities"].as_array().unwrap();
+        assert_eq!(caps.len(), 2);
+        assert_eq!(caps[0], "open_uri");
+        assert_eq!(caps[1], "notify");
+    }
+
+    #[test]
+    fn response_ok_to_varlink() {
+        let resp = Response::Ok;
+        let vr = resp.to_varlink();
+        assert!(vr.error.is_none());
+        let params = vr.parameters.unwrap();
+        assert!(params.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn error_varlink_id_round_trip() {
+        let errors = [
+            SubportalError::UserDenied,
+            SubportalError::NotSupported,
+            SubportalError::FileTooLarge,
+            SubportalError::NoClient,
+        ];
+        for err in &errors {
+            let id = err.varlink_id();
+            let back = SubportalError::from_varlink_id(id).unwrap();
+            assert_eq!(&back, err);
+        }
+    }
+
+    #[test]
+    fn error_unknown_id_returns_none() {
+        assert!(SubportalError::from_varlink_id("io.subportal.DoesNotExist").is_none());
+        assert!(SubportalError::from_varlink_id("").is_none());
+    }
+
+    #[test]
+    fn error_to_varlink_response() {
+        let err = SubportalError::UserDenied;
+        let vr = err.to_varlink();
+        assert_eq!(vr.error.as_deref(), Some("io.subportal.UserDenied"));
+        assert!(vr.parameters.is_some());
+    }
+
+    #[test]
+    fn from_varlink_unknown_method() {
+        let vr = VarlinkRequest {
+            method: "io.subportal.Unknown".into(),
+            parameters: serde_json::Value::Object(Default::default()),
+        };
+        assert!(Request::from_varlink(&vr).is_err());
+    }
+
+    #[test]
+    fn from_varlink_missing_params() {
+        // OpenURI missing uri
+        let vr = VarlinkRequest {
+            method: "io.subportal.OpenURI".into(),
+            parameters: serde_json::json!({}),
+        };
+        assert!(Request::from_varlink(&vr).is_err());
+
+        // OpenFile missing name
+        let vr = VarlinkRequest {
+            method: "io.subportal.OpenFile".into(),
+            parameters: serde_json::json!({"mime": "text/plain", "content": "abc"}),
+        };
+        assert!(Request::from_varlink(&vr).is_err());
+
+        // Notify missing title
+        let vr = VarlinkRequest {
+            method: "io.subportal.Notify".into(),
+            parameters: serde_json::json!({"body": "test"}),
+        };
+        assert!(Request::from_varlink(&vr).is_err());
+    }
+
+    #[test]
+    fn varlink_request_json_round_trip() {
+        let vr = VarlinkRequest {
+            method: "io.subportal.OpenURI".into(),
+            parameters: serde_json::json!({"uri": "https://example.com"}),
+        };
+        let json = serde_json::to_string(&vr).unwrap();
+        let back: VarlinkRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.method, vr.method);
+        assert_eq!(back.parameters, vr.parameters);
+    }
+
+    #[test]
+    fn varlink_request_default_params() {
+        let json = r#"{"method":"io.subportal.Ping"}"#;
+        let vr: VarlinkRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(vr.method, "io.subportal.Ping");
+        assert!(vr.parameters.is_null());
+    }
+
+    #[test]
+    fn varlink_response_skips_none() {
+        let vr = VarlinkResponse {
+            parameters: None,
+            error: None,
+        };
+        let json = serde_json::to_string(&vr).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tier 2 -- Wire format tests (real TCP, async)
+    // -----------------------------------------------------------------------
+
+    async fn tcp_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = TcpStream::connect(addr).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        (client, server)
+    }
+
+    #[tokio::test]
+    async fn wire_round_trip_request() {
+        let (mut client, server) = tcp_pair().await;
+        let req = VarlinkRequest {
+            method: "io.subportal.Ping".into(),
+            parameters: serde_json::Value::Object(Default::default()),
+        };
+        write_message(&mut client, &req).await.unwrap();
+        let back: VarlinkRequest = read_message(&mut BufReader::new(server)).await.unwrap();
+        assert_eq!(back.method, "io.subportal.Ping");
+    }
+
+    #[tokio::test]
+    async fn wire_round_trip_response() {
+        let (client, mut server) = tcp_pair().await;
+        let resp = VarlinkResponse {
+            parameters: Some(serde_json::json!({"version": "0.1.0"})),
+            error: None,
+        };
+        write_message(&mut server, &resp).await.unwrap();
+        let back: VarlinkResponse = read_message(&mut BufReader::new(client)).await.unwrap();
+        assert_eq!(back.parameters.unwrap()["version"], "0.1.0");
+        assert!(back.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn wire_multiple_messages() {
+        let (mut client, server) = tcp_pair().await;
+        for i in 0..3 {
+            let req = VarlinkRequest {
+                method: format!("io.subportal.Test{i}"),
+                parameters: serde_json::Value::Object(Default::default()),
+            };
+            write_message(&mut client, &req).await.unwrap();
+        }
+        let mut reader = BufReader::new(server);
+        for i in 0..3 {
+            let back: VarlinkRequest = read_message(&mut reader).await.unwrap();
+            assert_eq!(back.method, format!("io.subportal.Test{i}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn wire_message_too_large() {
+        let (mut client, server) = tcp_pair().await;
+        // Write a payload larger than MAX_MESSAGE_SIZE followed by NUL
+        let big = vec![b'x'; MAX_MESSAGE_SIZE + 1];
+        client.write_all(&big).await.unwrap();
+        client.write_u8(NUL).await.unwrap();
+        client.flush().await.unwrap();
+        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("maximum size"), "unexpected error: {err_msg}");
+    }
+
+    #[tokio::test]
+    async fn wire_empty_message() {
+        let (mut client, server) = tcp_pair().await;
+        // Send just a NUL byte -- empty payload
+        client.write_u8(NUL).await.unwrap();
+        client.flush().await.unwrap();
+        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn wire_invalid_json() {
+        let (mut client, server) = tcp_pair().await;
+        client.write_all(b"not json at all").await.unwrap();
+        client.write_u8(NUL).await.unwrap();
+        client.flush().await.unwrap();
+        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn wire_connection_closed() {
+        let (client, server) = tcp_pair().await;
+        // Close the client side without sending NUL
+        drop(client);
+        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        assert!(result.is_err());
+    }
 }

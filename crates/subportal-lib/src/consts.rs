@@ -1,3 +1,5 @@
+//! Shared constants for the subportal protocol.
+
 /// Default TCP port for the subportal daemon.
 pub const DEFAULT_PORT: u16 = 19494;
 

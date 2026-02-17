@@ -168,6 +168,80 @@ auto_open_files = false   # still confirm
 | `notify-send` | Server          | Rust     | Drop-in replacement                                  |
 | `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status/drain      |
 
+## NixOS / home-manager / system-manager
+
+The flake exports packages and modules for all three systems.
+
+### Packages
+
+| Flake output | Contents |
+| --- | --- |
+| `packages.<system>.subportald` | Client daemon binary |
+| `packages.<system>.subportal` | Server-side CLI tools (`subportal`, `xdg-open`, `notify-send`) |
+
+### Modules
+
+| Flake output | Type | Description |
+| --- | --- | --- |
+| `nixosModules.subportald` | NixOS | systemd user service for the client daemon |
+| `nixosModules.subportal` | NixOS | Server-side CLI tools in `environment.systemPackages` |
+| `homeModules.subportald` | home-manager | systemd user service for the client daemon |
+| `homeModules.subportal` | home-manager | Server-side CLI tools in `home.packages` |
+| `modules.system-manager.subportald` | system-manager | systemd system service for the client daemon |
+| `modules.system-manager.subportal` | system-manager | Server-side CLI tools in `environment.systemPackages` |
+
+### Client setup (desktop machine)
+
+NixOS:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.subportal.nixosModules.subportald ];
+  services.subportald.enable = true;
+  # services.subportald.port = 19494;      # default
+  # services.subportald.openFirewall = false; # usually not needed
+}
+```
+
+home-manager:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.subportal.homeModules.subportald ];
+  services.subportald.enable = true;
+}
+```
+
+### Server setup (remote SSH host)
+
+NixOS:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.subportal.nixosModules.subportal ];
+  programs.subportal.enable = true;
+  # programs.subportal.xdg-open = true;     # install xdg-open drop-in
+  # programs.subportal.notify-send = true;   # install notify-send drop-in
+}
+```
+
+home-manager:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.subportal.homeModules.subportal ];
+  programs.subportal.enable = true;
+}
+```
+
+The `xdg-open` and `notify-send` drop-in replacements are installed by default.
+Set `programs.subportal.xdg-open = false` or `programs.subportal.notify-send = false`
+to disable them.
+
 ## V2 Roadmap
 
 - Secrets/keychain forwarding (secret-tool drop-in)

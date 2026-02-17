@@ -1,3 +1,10 @@
+//! subportal -- explicit CLI for the subportal protocol.
+//!
+//! Provides `status`, `open`, and `notify` subcommands for interacting with
+//! the subportal daemon from the server side. Unlike the drop-in replacements,
+//! this binary is invoked explicitly and provides richer output (e.g. latency
+//! and capability reporting via `status`).
+
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;

@@ -1,3 +1,9 @@
+//! xdg-desktop-portal integration via D-Bus.
+//!
+//! Uses the [ashpd](https://docs.rs/ashpd) crate to talk to the local
+//! xdg-desktop-portal instance. Provides functions for opening URIs, opening
+//! files (with a temp-file write step), and sending notifications.
+
 use std::os::fd::AsFd;
 use std::path::PathBuf;
 

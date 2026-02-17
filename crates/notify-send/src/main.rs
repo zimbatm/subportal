@@ -1,3 +1,10 @@
+//! notify-send -- drop-in replacement that forwards to subportal.
+//!
+//! When placed earlier in `$PATH` than the real `notify-send`, this binary
+//! transparently forwards desktop notifications through the subportal tunnel
+//! to the client's desktop. Parses standard `notify-send` flags for
+//! compatibility.
+
 use std::process::ExitCode;
 
 use subportal_lib::client::Client;

@@ -1,3 +1,10 @@
+//! subportald -- the subportal client daemon.
+//!
+//! Runs on the user's desktop machine and listens for Varlink-over-TCP
+//! requests from server-side tools. Each request is dispatched to the local
+//! xdg-desktop-portal D-Bus interface to open URLs, transfer files, or show
+//! desktop notifications.
+
 mod handler;
 mod portal;
 
