@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
                     if let Some(ref host) = ssh_host {
                         info!("request from SSH host {host}: {request:?}");
                     }
-                    match handler::handle(request).await {
+                    match handler::handle(request, ssh_host.as_deref()).await {
                         Ok(response) => {
                             if let Err(e) = responder.send_ok(response).await {
                                 error!("failed to send response: {e:#}");

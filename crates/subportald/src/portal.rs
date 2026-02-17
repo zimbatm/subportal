@@ -59,6 +59,7 @@ pub async fn notify(
     body: Option<&str>,
     urgency: Option<&str>,
     icon: Option<&str>,
+    ssh_host: Option<&str>,
 ) -> anyhow::Result<()> {
     let connection = Connection::session()
         .await
@@ -74,6 +75,11 @@ pub async fn notify(
         hints.insert("urgency", Value::from(level));
     }
 
+    let app_name = match ssh_host {
+        Some(host) => format!("subportal@{host}"),
+        None => "subportal".to_string(),
+    };
+
     let _reply_id: u32 = connection
         .call_method(
             Some("org.freedesktop.Notifications"),
@@ -81,7 +87,7 @@ pub async fn notify(
             Some("org.freedesktop.Notifications"),
             "Notify",
             &(
-                "subportal",                       // app_name
+                app_name.as_str(),                 // app_name
                 0u32,                              // replaces_id
                 icon.unwrap_or(""),                // app_icon
                 title,                             // summary

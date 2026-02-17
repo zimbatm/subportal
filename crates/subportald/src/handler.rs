@@ -13,7 +13,12 @@ use crate::portal;
 const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify"];
 
 /// Handle a parsed request and return the response or error.
-pub async fn handle(request: Request) -> Result<Response, SubportalError> {
+///
+/// `ssh_host` is the resolved SSH remote host from `SO_PEERCRED`, if available.
+pub async fn handle(
+    request: Request,
+    ssh_host: Option<&str>,
+) -> Result<Response, SubportalError> {
     match request {
         Request::Ping => {
             info!("ping");
@@ -54,6 +59,7 @@ pub async fn handle(request: Request) -> Result<Response, SubportalError> {
                 body.as_deref(),
                 urgency.as_deref(),
                 icon.as_deref(),
+                ssh_host,
             )
             .await
             .map_err(|e| {
