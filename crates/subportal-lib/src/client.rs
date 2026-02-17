@@ -20,6 +20,9 @@ use crate::protocol::{
 /// A client that connects to the subportal daemon over a Unix socket.
 pub struct Client {
     path: PathBuf,
+    /// Hostname of this machine, included in every request so the daemon can
+    /// identify which server the request originates from.
+    host: Option<String>,
 }
 
 impl Default for Client {
@@ -36,7 +39,10 @@ impl Client {
             .ok()
             .map(PathBuf::from)
             .unwrap_or_else(default_socket_path);
-        Self { path }
+        Self {
+            path,
+            host: get_hostname(),
+        }
     }
 
     /// Return the socket path this client connects to.
@@ -48,6 +54,7 @@ impl Client {
     pub fn with_path(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
+            host: get_hostname(),
         }
     }
 
@@ -58,7 +65,18 @@ impl Client {
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
-        let varlink_req = request.to_varlink();
+        let mut varlink_req = request.to_varlink();
+
+        // Inject the host identifier into the request parameters.
+        if let Some(ref host) = self.host {
+            if let serde_json::Value::Object(ref mut map) = varlink_req.parameters {
+                map.insert(
+                    "host".to_string(),
+                    serde_json::Value::String(host.clone()),
+                );
+            }
+        }
+
         write_message(&mut stream, &varlink_req)
             .await
             .map_err(|_| SubportalError::NoClient)?;
@@ -100,5 +118,17 @@ impl Client {
             }
             _ => Ok(Response::Ok),
         }
+    }
+}
+
+/// Get the local hostname via `gethostname(2)`.
+fn get_hostname() -> Option<String> {
+    let mut buf = [0u8; 256];
+    let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+    if ret == 0 {
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        std::str::from_utf8(&buf[..end]).ok().map(String::from)
+    } else {
+        None
     }
 }

@@ -22,7 +22,7 @@ subportal open ./report.pdf   ─(sock)─>  -> opens in PDF viewer
 ```
 
 The server-side tools connect to a Unix domain socket
-(`$XDG_RUNTIME_DIR/subportal/subportal.sock`), which SSH reverse-forwards to
+(`$XDG_RUNTIME_DIR/subportal.sock`), which SSH reverse-forwards to
 the client daemon (`subportald`). The daemon uses
 [xdg-desktop-portal](https://flatpak.github.io/xdg-desktop-portal/) D-Bus
 APIs to show native dialogs and notifications on whatever desktop environment
@@ -69,17 +69,17 @@ back to your desktop. Add this to your `~/.ssh/config`:
 
 ```
 Host myserver
-    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
+    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
 ```
 
 Or pass it on the command line:
 
 ```sh
-ssh -R /run/user/1000/subportal/subportal.sock:/run/user/1000/subportal/subportal.sock myserver
+ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 ```
 
 Replace `1000` with your actual UID on both machines, or use
-`$XDG_RUNTIME_DIR/subportal/subportal.sock` if your shell expands it.
+`$XDG_RUNTIME_DIR/subportal.sock` if your shell expands it.
 
 No server-side SSH configuration changes are required.
 
@@ -93,7 +93,7 @@ Start the daemon on your desktop machine:
 subportald
 ```
 
-It listens on `$XDG_RUNTIME_DIR/subportal/subportal.sock` by default. Use
+It listens on `$XDG_RUNTIME_DIR/subportal.sock` by default. Use
 `--socket` to override.
 
 ### Server side
@@ -146,7 +146,7 @@ Shows the daemon version, round-trip latency, and supported capabilities.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SUBPORTAL_SOCKET` | `$XDG_RUNTIME_DIR/subportal/subportal.sock` | Override the Unix socket path used by server-side tools |
+| `SUBPORTAL_SOCKET` | `$XDG_RUNTIME_DIR/subportal.sock` | Override the Unix socket path used by server-side tools |
 | `RUST_LOG` | -- | Control log verbosity (e.g. `RUST_LOG=debug`) |
 
 ## V1 capabilities
@@ -165,9 +165,9 @@ Shows the daemon version, round-trip latency, and supported capabilities.
 - **Access control**: Unix socket permissions restrict access to the owning
   user. Only the socket owner can connect, unlike TCP localhost which is
   accessible by any local user.
-- **Server identity**: The daemon uses `SO_PEERCRED` to identify the PID of
-  the connecting process and resolves it to the SSH remote host via
-  `/proc/<pid>/cmdline`. This enables per-server logging and trust policies.
+- **Server identity**: Server-side tools self-report their hostname via the
+  `host` request parameter. The daemon uses `SO_PEERCRED` for UID-based
+  access control, rejecting connections from mismatched UIDs.
 - **OpenURI / OpenFile**: The client shows a confirmation dialog before
   opening anything. The user must explicitly approve each request.
 - **Notify**: No confirmation required (passive, low risk).

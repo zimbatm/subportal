@@ -57,7 +57,7 @@ Exit codes follow the xdg-open convention:
 
 *SUBPORTAL_SOCKET*
 	Override the Unix socket path used to connect to the daemon. Default:
-	_$XDG_RUNTIME_DIR/subportal/subportal.sock_.
+	_$XDG_RUNTIME_DIR/subportal.sock_.
 
 # TRANSPORT
 
@@ -66,13 +66,13 @@ socket forwarding. Configure it in *~/.ssh/config*:
 
 ```
 Host myserver
-    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
+    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
 ```
 
 Or on the command line:
 
 ```
-ssh -R /run/user/1000/subportal/subportal.sock:/run/user/1000/subportal/subportal.sock myserver
+ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 ```
 
 Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).

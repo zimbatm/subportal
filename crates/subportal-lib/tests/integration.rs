@@ -12,7 +12,7 @@ async fn spawn_server(
     let server = Server::bind(&sock).await.unwrap();
     let client = Client::with_path(&sock);
     let handle = tokio::spawn(async move {
-        let (req, responder) = server.accept().await.unwrap();
+        let (req, _host, responder) = server.accept().await.unwrap();
         match handler(req) {
             Ok(resp) => responder.send_ok(resp).await.unwrap(),
             Err(err) => responder.send_error(err).await.unwrap(),
@@ -218,7 +218,7 @@ async fn multiple_sequential_requests() {
 
     let handle = tokio::spawn(async move {
         for _ in 0..3 {
-            let (_, responder) = server.accept().await.unwrap();
+            let (_, _, responder) = server.accept().await.unwrap();
             responder.send_ok(Response::Ok).await.unwrap();
         }
     });

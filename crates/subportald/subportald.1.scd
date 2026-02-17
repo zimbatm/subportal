@@ -16,14 +16,14 @@ Each request is dispatched to the local xdg-desktop-portal D-Bus interface
 to open URLs, transfer files, or show desktop notifications.
 
 The daemon listens on a Unix socket (by default
-_$XDG_RUNTIME_DIR/subportal/subportal.sock_). Server-side tools reach it
+_$XDG_RUNTIME_DIR/subportal.sock_). Server-side tools reach it
 through an SSH reverse socket forward.
 
 # OPTIONS
 
 *-s, --socket* _PATH_
 	Unix socket path to listen on. Default:
-	_$XDG_RUNTIME_DIR/subportal/subportal.sock_.
+	_$XDG_RUNTIME_DIR/subportal.sock_.
 
 # CAPABILITIES
 
@@ -59,23 +59,26 @@ SSH connection must be configured to forward the subportal Unix socket:
 
 ```
 Host myserver
-    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
+    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
 ```
 
 Or on the command line:
 
 ```
-ssh -R /run/user/1000/subportal/subportal.sock:/run/user/1000/subportal/subportal.sock myserver
+ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 ```
 
 Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 
 # PEER IDENTITY
 
-When accepting a connection, *subportald* uses _SO_PEERCRED_ to obtain the
-PID of the connecting process. It then walks the process tree via
-_/proc/<pid>/cmdline_ to find an _sshd_ parent process and extract the SSH
-remote host. This information is logged with each request.
+Server-side tools include their hostname in every request via the _host_
+parameter (set automatically from gethostname(2)). The daemon uses this to
+annotate notifications (e.g. _subportal@myserver_) and for logging.
+
+*subportald* also uses _SO_PEERCRED_ to obtain the UID of the connecting
+process and rejects connections from UIDs that don't match its own (except
+root).
 
 # SYSTEMD
 

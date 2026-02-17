@@ -14,10 +14,10 @@ const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify"];
 
 /// Handle a parsed request and return the response or error.
 ///
-/// `ssh_host` is the resolved SSH remote host from `SO_PEERCRED`, if available.
+/// `host` is the originating server's hostname, if provided in the request.
 pub async fn handle(
     request: Request,
-    ssh_host: Option<&str>,
+    host: Option<&str>,
 ) -> Result<Response, SubportalError> {
     match request {
         Request::Ping => {
@@ -59,7 +59,7 @@ pub async fn handle(
                 body.as_deref(),
                 urgency.as_deref(),
                 icon.as_deref(),
-                ssh_host,
+                host,
             )
             .await
             .map_err(|e| {

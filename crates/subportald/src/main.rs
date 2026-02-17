@@ -33,13 +33,12 @@ async fn main() -> Result<()> {
 
     loop {
         match server.accept().await {
-            Ok((request, responder)) => {
-                let ssh_host = responder.peer.ssh_host.clone();
+            Ok((request, host, responder)) => {
                 tokio::spawn(async move {
-                    if let Some(ref host) = ssh_host {
-                        info!("request from SSH host {host}: {request:?}");
+                    if let Some(ref h) = host {
+                        info!("request from {h}: {request:?}");
                     }
-                    match handler::handle(request, ssh_host.as_deref()).await {
+                    match handler::handle(request, host.as_deref()).await {
                         Ok(response) => {
                             if let Err(e) = responder.send_ok(response).await {
                                 error!("failed to send response: {e:#}");

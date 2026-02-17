@@ -22,17 +22,17 @@ large file chunked transfer.
 ## Transport
 
 Unix domain socket over SSH reverse socket forwarding. Default socket path:
-`$XDG_RUNTIME_DIR/subportal/subportal.sock`.
+`$XDG_RUNTIME_DIR/subportal.sock`.
 
 Client `~/.ssh/config`:
 
 ```
 Host myserver
-    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
+    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
 ```
 
 Server-side commands connect to `$SUBPORTAL_SOCKET` (default
-`$XDG_RUNTIME_DIR/subportal/subportal.sock`). If nothing is listening,
+`$XDG_RUNTIME_DIR/subportal.sock`). If nothing is listening,
 subportal is unavailable.
 
 No server-side SSH config changes required.
@@ -43,24 +43,31 @@ Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 
 Varlink over Unix socket. Each connection is one method call.
 
+All methods accept an optional `host` parameter (string) that identifies the
+originating server's hostname. Server-side tools set this automatically via
+`gethostname(2)`. The daemon uses it to annotate notifications and logs (e.g.
+`subportal@myserver` as the notification app name).
+
 ```
 interface io.subportal
 
-method Ping() -> (capabilities: []string, version: string)
+method Ping(host: ?string) -> (capabilities: []string, version: string)
 
-method OpenURI(uri: string) -> ()
+method OpenURI(uri: string, host: ?string) -> ()
 
 method OpenFile(
     name: string,
     mime: string,
-    content: string
+    content: string,
+    host: ?string
 ) -> ()
 
 method Notify(
     title: string,
     body: ?string,
     urgency: ?string,
-    icon: ?string
+    icon: ?string,
+    host: ?string
 ) -> ()
 
 ```
@@ -106,15 +113,17 @@ subportal notify ...      # explicit notify
 ## Client Daemon -- `subportald`
 
 Runs on the user's desktop machine. Listens on
-`$XDG_RUNTIME_DIR/subportal/subportal.sock`.
+`$XDG_RUNTIME_DIR/subportal.sock`.
 
 ### Peer Identity
 
-When accepting a connection, `subportald` uses `SO_PEERCRED` to obtain the
-PID of the connecting process. It then walks the process tree via
-`/proc/<pid>/cmdline` to find an `sshd` parent process and extract the SSH
-remote host (e.g. `sshd: user@1.2.3.4`). This information is logged with
-each request and can be used for per-server trust policies.
+Server-side tools include their hostname in every request via the `host`
+parameter (set automatically from `gethostname(2)`). The daemon uses this
+to annotate notifications (e.g. `subportal@myserver`) and for logging.
+
+`subportald` also uses `SO_PEERCRED` to obtain the UID of the connecting
+process and rejects connections from UIDs that don't match its own (except
+root), matching OpenSSH's access control behavior.
 
 ### Request handling
 
@@ -155,9 +164,8 @@ capability, it gets `io.subportal.NotSupported` without a round-trip.
 - **Access control**: Unix socket permissions restrict access to the owning
   user. Only the user who owns the socket can connect, unlike TCP localhost
   which is accessible by any local user.
-- **Server identity**: `SO_PEERCRED` on the Unix socket provides the PID of
-  the connecting process. The daemon resolves this to the SSH remote host via
-  `/proc/<pid>/cmdline`, enabling per-server logging and trust policies.
+- **Server identity**: Server-side tools self-report their hostname via the
+  `host` request parameter. `SO_PEERCRED` provides UID-based access control.
 - **OpenURI/OpenFile**: User confirmation required before opening.
 - **Notify**: No confirmation (passive, low risk).
 
@@ -211,8 +219,8 @@ NixOS:
 {
   imports = [ inputs.subportal.nixosModules.subportald ];
   services.subportald.enable = true;
-  # services.subportald.socketPath = "%t/subportal/subportal.sock";  # default
-  # services.subportald.sshHosts = [ "myserver" ];      # auto-configure RemoteForward
+  # services.subportald.sshHosts."myserver" = {};              # auto-configure RemoteForward
+  # services.subportald.sshHosts."other" = { remoteUid = 1001; };  # different UID on remote
 }
 ```
 
@@ -223,7 +231,7 @@ home-manager:
 {
   imports = [ inputs.subportal.homeModules.subportald ];
   services.subportald.enable = true;
-  # services.subportald.sshHosts = [ "myserver" ];      # auto-configure RemoteForward
+  # services.subportald.sshHosts."myserver" = {};              # auto-configure RemoteForward
 }
 ```
 

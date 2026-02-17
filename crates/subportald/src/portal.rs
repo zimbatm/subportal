@@ -59,7 +59,7 @@ pub async fn notify(
     body: Option<&str>,
     urgency: Option<&str>,
     icon: Option<&str>,
-    ssh_host: Option<&str>,
+    host: Option<&str>,
 ) -> anyhow::Result<()> {
     let connection = Connection::session()
         .await
@@ -75,8 +75,8 @@ pub async fn notify(
         hints.insert("urgency", Value::from(level));
     }
 
-    let app_name = match ssh_host {
-        Some(host) => format!("subportal@{host}"),
+    let app_name = match host {
+        Some(h) => format!("subportal@{h}"),
         None => "subportal".to_string(),
     };
 
