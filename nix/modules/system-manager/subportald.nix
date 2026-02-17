@@ -16,7 +16,7 @@ in
 
     socketPath = lib.mkOption {
       type = lib.types.str;
-      default = "/run/subportal/subportal.sock";
+      default = "/run/subportal.sock";
       description = "Unix socket path for subportald to listen on.";
     };
 
