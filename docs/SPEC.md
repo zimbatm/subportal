@@ -111,10 +111,15 @@ Runs on the user's desktop machine. Listens on `127.0.0.1:19494`.
 | `Ping`       | Return supported capabilities + version                                                      |
 | `OpenURI`    | Show confirmation via xdg-desktop-portal `OpenURI` → open in browser                        |
 | `OpenFile`   | Show confirmation (name, size, MIME) → save to `$XDG_RUNTIME_DIR/subportal/<name>` → open it   |
-| `Notify`     | Forward to xdg-desktop-portal `AddNotification` (no confirmation needed)                     |
+| `Notify`     | Forward to `org.freedesktop.Notifications` D-Bus interface (no confirmation needed)          |
 
 Confirmation dialogs use the local xdg-desktop-portal D-Bus interface. On
 Gnome, you get native Gnome dialogs. On KDE, native KDE dialogs.
+
+Notifications use the standard `org.freedesktop.Notifications` D-Bus interface
+directly (the same one used by `libnotify`/`notify-send`), rather than the
+portal, because the portal requires a discoverable `.desktop` file and
+pidfd-based caller identification that is unreliable for non-sandboxed apps.
 
 ### Lifecycle
 
@@ -162,7 +167,7 @@ auto_open_files = false   # still confirm
 
 | Component     | Runs on         | Language | Description                                          |
 | ------------- | --------------- | -------- | ---------------------------------------------------- |
-| `subportald`     | Client desktop  | Rust     | Daemon, listens on TCP, talks to xdg-desktop-portal  |
+| `subportald`     | Client desktop  | Rust     | Daemon, listens on TCP, talks to xdg-desktop-portal and D-Bus  |
 | `xdg-open`    | Server          | Rust     | Drop-in replacement, connects to subportal              |
 | `notify-send` | Server          | Rust     | Drop-in replacement                                  |
 | `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status/drain      |

@@ -1,18 +1,19 @@
-//! xdg-desktop-portal integration via D-Bus.
+//! Desktop integration via D-Bus.
 //!
-//! Uses the [ashpd](https://docs.rs/ashpd) crate to talk to the local
-//! xdg-desktop-portal instance. Provides functions for opening URIs, opening
-//! files (with a temp-file write step), and sending notifications.
+//! Uses [ashpd](https://docs.rs/ashpd) for portal-based file/URI opening and
+//! the standard `org.freedesktop.Notifications` interface for notifications.
 
 use std::os::fd::AsFd;
 use std::path::PathBuf;
 
+use std::collections::HashMap;
+
 use anyhow::Context;
-use ashpd::desktop::Icon;
-use ashpd::desktop::notification::{Notification, NotificationProxy, Priority};
 use ashpd::desktop::open_uri::OpenFileRequest;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use zbus::Connection;
+use zbus::zvariant::Value;
 
 /// Open a URI in the user's default application, showing a confirmation dialog.
 pub async fn open_uri(uri: &str) -> anyhow::Result<()> {
@@ -49,49 +50,53 @@ pub async fn open_file(name: &str, _mime: &str, content_b64: &str) -> anyhow::Re
     Ok(())
 }
 
-/// Send a desktop notification.
+/// Send a desktop notification via org.freedesktop.Notifications.
+///
+/// Uses the standard notification D-Bus interface directly rather than
+/// xdg-desktop-portal, which requires a discoverable .desktop file and
+/// pidfd-based caller identification that doesn't work with dbus-daemon.
 pub async fn notify(
     title: &str,
     body: Option<&str>,
     urgency: Option<&str>,
     icon: Option<&str>,
 ) -> anyhow::Result<()> {
-    let proxy = NotificationProxy::new()
+    let connection = Connection::session()
         .await
-        .context("failed to connect to notification portal")?;
+        .context("failed to connect to session D-Bus")?;
 
-    let mut notification = Notification::new(title);
-
-    if let Some(b) = body {
-        notification = notification.body(b);
-    }
-
+    let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
     if let Some(u) = urgency {
-        let priority = match u {
-            "low" => Priority::Low,
-            "critical" | "urgent" => Priority::Urgent,
-            _ => Priority::Normal,
+        let level: u8 = match u {
+            "low" => 0,
+            "critical" | "urgent" => 2,
+            _ => 1,
         };
-        notification = notification.priority(priority);
+        hints.insert("urgency", Value::from(level));
     }
 
-    if let Some(name) = icon {
-        notification = notification.icon(Icon::with_names([name]));
-    }
-
-    // Use a unique ID so notifications don't replace each other
-    let id = format!(
-        "subportal-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    );
-
-    proxy
-        .add_notification(&id, notification)
+    let _reply_id: u32 = connection
+        .call_method(
+            Some("org.freedesktop.Notifications"),
+            "/org/freedesktop/Notifications",
+            Some("org.freedesktop.Notifications"),
+            "Notify",
+            &(
+                "subportal",                       // app_name
+                0u32,                              // replaces_id
+                icon.unwrap_or(""),                // app_icon
+                title,                             // summary
+                body.unwrap_or(""),                // body
+                Vec::<&str>::new(),                // actions
+                &hints,                            // hints
+                -1i32,                             // expire_timeout (-1 = server default)
+            ),
+        )
         .await
-        .context("failed to send notification")?;
+        .context("failed to send notification")?
+        .body()
+        .deserialize()
+        .context("failed to parse notification reply")?;
 
     Ok(())
 }
