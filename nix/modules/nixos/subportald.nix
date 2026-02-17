@@ -7,7 +7,10 @@
 }:
 let
   cfg = config.services.subportald;
-  defaultSocketPath = "%t/subportal/subportal.sock";
+  # systemd specifier for ExecStart (%t = XDG_RUNTIME_DIR)
+  systemdSocketPath = "%t/subportal/subportal.sock";
+  # SSH token for RemoteForward (%i = local UID)
+  sshSocketPath = "/run/user/%i/subportal/subportal.sock";
 in
 {
   options.services.subportald = {
@@ -17,7 +20,7 @@ in
 
     socketPath = lib.mkOption {
       type = lib.types.str;
-      default = defaultSocketPath;
+      default = systemdSocketPath;
       description = ''
         Unix socket path for subportald to listen on.
         The default uses systemd's %t (XDG_RUNTIME_DIR) specifier.
@@ -59,7 +62,7 @@ in
     programs.ssh.extraConfig = lib.mkIf (cfg.sshHosts != [ ]) (
       lib.concatMapStrings (host: ''
         Host ${host}
-            RemoteForward /run/user/%i/subportal/subportal.sock ${cfg.socketPath}
+            RemoteForward ${sshSocketPath} ${sshSocketPath}
       '') cfg.sshHosts
     );
   };
