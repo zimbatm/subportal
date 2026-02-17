@@ -8,7 +8,12 @@ pkgs.rustPlatform.buildRustPackage {
   inherit pname;
   version = "0.1.0";
 
-  src = flake;
+  src = pkgs.lib.sourceByRegex flake [
+    "Cargo\.toml"
+    "Cargo\.lock"
+    "crates"
+    "crates/.*"
+  ];
 
   cargoLock.lockFile = "${flake}/Cargo.lock";
 
