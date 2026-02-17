@@ -8,6 +8,7 @@ use std::os::fd::AsFd;
 use std::path::PathBuf;
 
 use anyhow::Context;
+use ashpd::desktop::Icon;
 use ashpd::desktop::notification::{Notification, NotificationProxy, Priority};
 use ashpd::desktop::open_uri::OpenFileRequest;
 use base64::Engine;
@@ -53,7 +54,7 @@ pub async fn notify(
     title: &str,
     body: Option<&str>,
     urgency: Option<&str>,
-    _icon: Option<&str>,
+    icon: Option<&str>,
 ) -> anyhow::Result<()> {
     let proxy = NotificationProxy::new()
         .await
@@ -72,6 +73,10 @@ pub async fn notify(
             _ => Priority::Normal,
         };
         notification = notification.priority(priority);
+    }
+
+    if let Some(name) = icon {
+        notification = notification.icon(Icon::with_names([name]));
     }
 
     // Use a unique ID so notifications don't replace each other
