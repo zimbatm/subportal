@@ -1,0 +1,16 @@
+[package]
+name = "subportald"
+version = "0.1.0"
+edition = "2021"
+description = "Client daemon — listens on TCP, talks to xdg-desktop-portal"
+
+[dependencies]
+subportal-lib = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+ashpd = { workspace = true }
+url = { workspace = true }
+base64 = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+name = "xdg-open"
+version = "0.1.0"
+edition = "2021"
+description = "Drop-in xdg-open replacement — forwards to subportal"
+
+[dependencies]
+subportal-lib = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+mime_guess = { workspace = true }
+base64 = { workspace = true }
+anyhow = { workspace = true }

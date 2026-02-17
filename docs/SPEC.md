@@ -1,8 +1,8 @@
-# portal
+# subportal
 
 xdg-desktop-portal, but the sandbox boundary is an SSH connection.
 
-`portal` bridges a headless SSH server to the user's local desktop. Server-side
+`subportal` bridges a headless SSH server to the user's local desktop. Server-side
 commands like `xdg-open` and `notify-send` transparently forward requests
 through an SSH tunnel to a client daemon, which handles them using the local
 desktop environment.
@@ -30,8 +30,8 @@ Host myserver
     RemoteForward 127.0.0.1:19494 127.0.0.1:19494
 ```
 
-Server-side commands connect to `localhost:$PORTAL_PORT` (default `19494`). If
-nothing is listening, portal is unavailable.
+Server-side commands connect to `localhost:$SUBPORTAL_PORT` (default `19494`). If
+nothing is listening, subportal is unavailable.
 
 No server-side SSH config changes required.
 
@@ -40,7 +40,7 @@ No server-side SSH config changes required.
 Varlink over TCP. Each connection is one method call.
 
 ```
-interface io.portal
+interface io.subportal
 
 method Ping() -> (capabilities: []string, version: string)
 
@@ -64,10 +64,10 @@ method Notify(
 Errors follow Varlink convention:
 
 ```
-error io.portal.UserDenied ()
-error io.portal.NotSupported (capability: string)
-error io.portal.FileTooLarge (max_bytes: int)
-error io.portal.NoClient ()
+error io.subportal.UserDenied ()
+error io.subportal.NotSupported (capability: string)
+error io.subportal.FileTooLarge (max_bytes: int)
+error io.subportal.NoClient ()
 ```
 
 File content in `OpenFile` is base64-encoded. 5MB cap for v1.
@@ -83,25 +83,25 @@ transparently.
 
 - If `target` is a URL → `OpenURI`
 - If `target` is a file → read file, `OpenFile` with detected MIME type
-- If portal unavailable → fall back to real `xdg-open`, then error
+- If subportal unavailable → fall back to real `xdg-open`, then error
 
 #### `notify-send [options] <title> [body]`
 
 - Parses standard `notify-send` flags (`-u`, `-i`, etc.)
 - Forwards via `Notify`
-- If portal unavailable → fall back to real `notify-send`, then silently fail
+- If subportal unavailable → fall back to real `notify-send`, then silently fail
   (notifications are best-effort)
 
 ### Explicit CLI
 
 ```bash
-portal status          # ping, show capabilities + latency
-portal drain           # process queued requests
-portal open <target>   # explicit open
-portal notify ...      # explicit notify
+subportal status          # ping, show capabilities + latency
+subportal drain           # process queued requests
+subportal open <target>   # explicit open
+subportal notify ...      # explicit notify
 ```
 
-## Client Daemon — `portald`
+## Client Daemon — `subportald`
 
 Runs on the user's desktop machine. Listens on `127.0.0.1:19494`.
 
@@ -111,7 +111,7 @@ Runs on the user's desktop machine. Listens on `127.0.0.1:19494`.
 | ------------ | -------------------------------------------------------------------------------------------- |
 | `Ping`       | Return supported capabilities + version                                                      |
 | `OpenURI`    | Show confirmation via xdg-desktop-portal `OpenURI` → open in browser                        |
-| `OpenFile`   | Show confirmation (name, size, MIME) → save to `$XDG_RUNTIME_DIR/portal/<name>` → open it   |
+| `OpenFile`   | Show confirmation (name, size, MIME) → save to `$XDG_RUNTIME_DIR/subportal/<name>` → open it   |
 | `Notify`     | Forward to xdg-desktop-portal `AddNotification` (no confirmation needed)                     |
 
 Confirmation dialogs use the local xdg-desktop-portal D-Bus interface. On
@@ -123,17 +123,17 @@ Started via systemd user unit or XDG autostart. Runs persistently.
 
 ## Queue (Server-Side)
 
-When portal can't reach `localhost:$PORTAL_PORT`:
+When subportal can't reach `localhost:$SUBPORTAL_PORT`:
 
-- **`notify-send`**: Queue to `~/.local/share/portal/queue/`. Silent.
-- **`xdg-open`**: Queue and print "Queued — will open when portal connects."
+- **`notify-send`**: Queue to `~/.local/share/subportal/queue/`. Silent.
+- **`xdg-open`**: Queue and print "Queued — will open when subportal connects."
 
-`portal drain` replays the queue. Client shows a summary notification:
+`subportal drain` replays the queue. Client shows a summary notification:
 "3 queued items from myserver" with an action to review them.
 
 ## Capability Handshake
 
-On first connection (or via `portal status`), server calls `Ping`. Client
+On first connection (or via `subportal status`), server calls `Ping`. Client
 responds with supported capabilities:
 
 ```json
@@ -141,7 +141,7 @@ responds with supported capabilities:
 ```
 
 Server caches this for the session. If a command tries an unsupported
-capability, it gets `io.portal.NotSupported` without a round-trip.
+capability, it gets `io.subportal.NotSupported` without a round-trip.
 
 ## Security Model
 
@@ -151,7 +151,7 @@ capability, it gets `io.portal.NotSupported` without a round-trip.
 
 ### Trust configuration
 
-Optional `~/.config/portal/trust.toml`:
+Optional `~/.config/subportal/trust.toml`:
 
 ```toml
 [servers.myserver]
@@ -163,10 +163,10 @@ auto_open_files = false   # still confirm
 
 | Component     | Runs on         | Language | Description                                          |
 | ------------- | --------------- | -------- | ---------------------------------------------------- |
-| `portald`     | Client desktop  | Python   | Daemon, listens on TCP, talks to xdg-desktop-portal  |
-| `xdg-open`    | Server          | Python   | Drop-in replacement, connects to portal              |
-| `notify-send` | Server          | Python   | Drop-in replacement                                  |
-| `portal`      | Server          | Python   | Explicit CLI for all capabilities + status/drain      |
+| `subportald`     | Client desktop  | Rust     | Daemon, listens on TCP, talks to xdg-desktop-portal  |
+| `xdg-open`    | Server          | Rust     | Drop-in replacement, connects to subportal              |
+| `notify-send` | Server          | Rust     | Drop-in replacement                                  |
+| `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status/drain      |
 
 ## V2 Roadmap
 
@@ -174,4 +174,4 @@ auto_open_files = false   # still confirm
 - Clipboard forwarding
 - FileChooser (client → server file picker)
 - Chunked file transfer (large files)
-- Multiple server connections (portald manages several tunnels)
+- Multiple server connections (subportald manages several tunnels)

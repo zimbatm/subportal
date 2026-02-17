@@ -1,0 +1,15 @@
+[package]
+name = "subportal"
+version = "0.1.0"
+edition = "2021"
+description = "Explicit CLI for all capabilities, status, and drain"
+
+[dependencies]
+subportal-lib = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+mime_guess = { workspace = true }
+base64 = { workspace = true }
