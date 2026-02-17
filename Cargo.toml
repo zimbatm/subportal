@@ -8,6 +8,9 @@ members = [
     "crates/notify-send",
 ]
 
+[workspace.package]
+license = "MIT"
+
 [workspace.dependencies]
 tokio = { version = "1", features = ["rt", "net", "io-util", "fs", "macros"] }
 serde = { version = "1", features = ["derive"] }

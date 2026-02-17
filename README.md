@@ -218,4 +218,4 @@ cargo doc --workspace --open
 
 ## License
 
-TODO
+[MIT](LICENSE)
