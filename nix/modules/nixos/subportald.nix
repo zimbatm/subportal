@@ -37,6 +37,7 @@ in
       description = "subportal client daemon";
       wantedBy = [ "graphical-session.target" ];
       after = [ "graphical-session.target" ];
+      partOf = [ "graphical-session.target" ];
 
       serviceConfig = {
         ExecStart = "${lib.getExe cfg.package} --port ${toString cfg.port}";
