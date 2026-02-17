@@ -58,7 +58,9 @@ pub async fn handle(request: Request) -> Result<Response, SubportalError> {
             .await
             .map_err(|e| {
                 warn!("notify failed: {e:#}");
-                SubportalError::NotSupported
+                SubportalError::NotSupported {
+                    capability: "Notify".into(),
+                }
             })?;
             Ok(Response::Ok)
         }

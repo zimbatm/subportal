@@ -70,10 +70,10 @@ pub enum Response {
 pub enum SubportalError {
     #[error("user denied the request")]
     UserDenied,
-    #[error("operation not supported")]
-    NotSupported,
-    #[error("file too large")]
-    FileTooLarge,
+    #[error("capability not supported: {capability}")]
+    NotSupported { capability: String },
+    #[error("file too large (max {max_bytes} bytes)")]
+    FileTooLarge { max_bytes: u64 },
     #[error("no client daemon reachable")]
     NoClient,
 }
@@ -82,17 +82,30 @@ impl SubportalError {
     pub fn varlink_id(&self) -> &'static str {
         match self {
             Self::UserDenied => "io.subportal.UserDenied",
-            Self::NotSupported => "io.subportal.NotSupported",
-            Self::FileTooLarge => "io.subportal.FileTooLarge",
+            Self::NotSupported { .. } => "io.subportal.NotSupported",
+            Self::FileTooLarge { .. } => "io.subportal.FileTooLarge",
             Self::NoClient => "io.subportal.NoClient",
         }
     }
 
-    pub fn from_varlink_id(id: &str) -> Option<Self> {
+    pub fn from_varlink(id: &str, parameters: &serde_json::Value) -> Option<Self> {
         match id {
             "io.subportal.UserDenied" => Some(Self::UserDenied),
-            "io.subportal.NotSupported" => Some(Self::NotSupported),
-            "io.subportal.FileTooLarge" => Some(Self::FileTooLarge),
+            "io.subportal.NotSupported" => {
+                let capability = parameters
+                    .get("capability")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                Some(Self::NotSupported { capability })
+            }
+            "io.subportal.FileTooLarge" => {
+                let max_bytes = parameters
+                    .get("max_bytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                Some(Self::FileTooLarge { max_bytes })
+            }
             "io.subportal.NoClient" => Some(Self::NoClient),
             _ => None,
         }
@@ -202,8 +215,17 @@ impl Response {
 
 impl SubportalError {
     pub fn to_varlink(&self) -> VarlinkResponse {
+        let parameters = match self {
+            Self::NotSupported { capability } => {
+                serde_json::json!({ "capability": capability })
+            }
+            Self::FileTooLarge { max_bytes } => {
+                serde_json::json!({ "max_bytes": max_bytes })
+            }
+            _ => serde_json::Value::Object(Default::default()),
+        };
         VarlinkResponse {
-            parameters: Some(serde_json::Value::Object(Default::default())),
+            parameters: Some(parameters),
             error: Some(self.varlink_id().to_string()),
         }
     }
@@ -337,32 +359,52 @@ mod tests {
     }
 
     #[test]
-    fn error_varlink_id_round_trip() {
+    fn error_varlink_round_trip() {
         let errors = [
             SubportalError::UserDenied,
-            SubportalError::NotSupported,
-            SubportalError::FileTooLarge,
+            SubportalError::NotSupported { capability: "OpenFile".into() },
+            SubportalError::FileTooLarge { max_bytes: 5_242_880 },
             SubportalError::NoClient,
         ];
         for err in &errors {
-            let id = err.varlink_id();
-            let back = SubportalError::from_varlink_id(id).unwrap();
+            let vr = err.to_varlink();
+            let params = vr.parameters.as_ref().unwrap();
+            let back = SubportalError::from_varlink(vr.error.as_deref().unwrap(), params).unwrap();
             assert_eq!(&back, err);
         }
     }
 
     #[test]
     fn error_unknown_id_returns_none() {
-        assert!(SubportalError::from_varlink_id("io.subportal.DoesNotExist").is_none());
-        assert!(SubportalError::from_varlink_id("").is_none());
+        let empty = serde_json::Value::Object(Default::default());
+        assert!(SubportalError::from_varlink("io.subportal.DoesNotExist", &empty).is_none());
+        assert!(SubportalError::from_varlink("", &empty).is_none());
     }
 
     #[test]
-    fn error_to_varlink_response() {
+    fn error_to_varlink_response_user_denied() {
         let err = SubportalError::UserDenied;
         let vr = err.to_varlink();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.UserDenied"));
-        assert!(vr.parameters.is_some());
+        assert!(vr.parameters.unwrap().as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn error_to_varlink_response_not_supported() {
+        let err = SubportalError::NotSupported { capability: "OpenFile".into() };
+        let vr = err.to_varlink();
+        assert_eq!(vr.error.as_deref(), Some("io.subportal.NotSupported"));
+        let params = vr.parameters.unwrap();
+        assert_eq!(params["capability"], "OpenFile");
+    }
+
+    #[test]
+    fn error_to_varlink_response_file_too_large() {
+        let err = SubportalError::FileTooLarge { max_bytes: 5_242_880 };
+        let vr = err.to_varlink();
+        assert_eq!(vr.error.as_deref(), Some("io.subportal.FileTooLarge"));
+        let params = vr.parameters.unwrap();
+        assert_eq!(params["max_bytes"], 5_242_880);
     }
 
     #[test]

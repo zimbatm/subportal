@@ -55,10 +55,13 @@ impl Client {
 
         // Check for error response
         if let Some(ref err_id) = varlink_resp.error {
-            if let Some(e) = SubportalError::from_varlink_id(err_id) {
+            let params = varlink_resp.parameters.as_ref()
+                .cloned()
+                .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+            if let Some(e) = SubportalError::from_varlink(err_id, &params) {
                 return Err(e);
             }
-            return Err(SubportalError::NotSupported);
+            return Err(SubportalError::NotSupported { capability: "unknown".into() });
         }
 
         // Parse success response based on what we sent

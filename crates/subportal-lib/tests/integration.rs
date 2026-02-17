@@ -163,19 +163,39 @@ async fn error_user_denied() {
 
 #[tokio::test]
 async fn error_not_supported() {
-    let (client, handle) = spawn_server(|_| Err(SubportalError::NotSupported)).await;
+    let (client, handle) = spawn_server(|_| {
+        Err(SubportalError::NotSupported {
+            capability: "OpenFile".into(),
+        })
+    })
+    .await;
 
     let err = client.call(&Request::Ping).await.unwrap_err();
-    assert_eq!(err, SubportalError::NotSupported);
+    assert_eq!(
+        err,
+        SubportalError::NotSupported {
+            capability: "OpenFile".into()
+        }
+    );
     handle.await.unwrap();
 }
 
 #[tokio::test]
 async fn error_file_too_large() {
-    let (client, handle) = spawn_server(|_| Err(SubportalError::FileTooLarge)).await;
+    let (client, handle) = spawn_server(|_| {
+        Err(SubportalError::FileTooLarge {
+            max_bytes: 5_242_880,
+        })
+    })
+    .await;
 
     let err = client.call(&Request::Ping).await.unwrap_err();
-    assert_eq!(err, SubportalError::FileTooLarge);
+    assert_eq!(
+        err,
+        SubportalError::FileTooLarge {
+            max_bytes: 5_242_880
+        }
+    );
     handle.await.unwrap();
 }
 
