@@ -198,8 +198,8 @@ NixOS:
 {
   imports = [ inputs.subportal.nixosModules.subportald ];
   services.subportald.enable = true;
-  # services.subportald.port = 19494;      # default
-  # services.subportald.openFirewall = false; # usually not needed
+  # services.subportald.port = 19494;                   # default
+  # services.subportald.sshHosts = [ "myserver" ];      # auto-configure RemoteForward
 }
 ```
 
@@ -210,6 +210,7 @@ home-manager:
 {
   imports = [ inputs.subportal.homeModules.subportald ];
   services.subportald.enable = true;
+  # services.subportald.sshHosts = [ "myserver" ];      # auto-configure RemoteForward
 }
 ```
 

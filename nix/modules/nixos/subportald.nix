@@ -20,12 +20,17 @@ in
       description = "TCP port for subportald to listen on.";
     };
 
-    openFirewall = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
+    sshHosts = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [
+        "myserver"
+        "*.example.com"
+      ];
       description = ''
-        Whether to open the firewall for subportald.
-        Usually not needed since connections come through SSH reverse tunnels.
+        SSH host patterns to configure RemoteForward for subportal.
+        Each entry generates a Host block in the system SSH config with
+        a RemoteForward directive for the subportal port.
       '';
     };
   };
@@ -46,6 +51,11 @@ in
       };
     };
 
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
+    programs.ssh.extraConfig = lib.mkIf (cfg.sshHosts != [ ]) (
+      lib.concatMapStrings (host: ''
+        Host ${host}
+            RemoteForward 127.0.0.1:${toString cfg.port} 127.0.0.1:${toString cfg.port}
+      '') cfg.sshHosts
+    );
   };
 }
