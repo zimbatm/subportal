@@ -39,6 +39,11 @@ impl Client {
         Self { path }
     }
 
+    /// Return the socket path this client connects to.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Create a new client that connects to the given socket path.
     pub fn with_path(path: impl AsRef<Path>) -> Self {
         Self {

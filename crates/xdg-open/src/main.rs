@@ -101,7 +101,13 @@ async fn main() -> ExitCode {
     match client.call(&request).await {
         Ok(_) => ExitCode::SUCCESS,
         Err(SubportalError::NoClient) => {
+            let path = client.path();
             eprintln!("xdg-open: subportal daemon is not reachable");
+            if path.exists() {
+                eprintln!("  socket: {} (exists but not responding)", path.display());
+            } else {
+                eprintln!("  socket: {} (not found)", path.display());
+            }
             ExitCode::from(3)
         }
         Err(SubportalError::UserDenied) => {

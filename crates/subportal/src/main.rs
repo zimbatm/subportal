@@ -59,6 +59,19 @@ fn is_url(target: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn no_client_error(client: &Client) {
+    let path = client.path();
+    eprintln!("subportal: daemon is not reachable");
+    if path.exists() {
+        eprintln!("  socket: {} (exists but not responding)", path.display());
+        eprintln!("  hint: is subportald running? check with: systemctl --user status subportald");
+    } else {
+        eprintln!("  socket: {} (not found)", path.display());
+        eprintln!("  hint: is the SSH tunnel active? configure with:");
+        eprintln!("    RemoteForward {} <local-socket-path>", path.display());
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     tracing_subscriber::fmt::init();
@@ -85,7 +98,7 @@ async fn main() -> ExitCode {
                     ExitCode::from(1)
                 }
                 Err(SubportalError::NoClient) => {
-                    eprintln!("subportal: daemon is not reachable");
+                    no_client_error(&client);
                     ExitCode::from(1)
                 }
                 Err(e) => {
@@ -139,7 +152,7 @@ async fn main() -> ExitCode {
             match client.call(&request).await {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(SubportalError::NoClient) => {
-                    eprintln!("subportal: daemon is not reachable");
+                    no_client_error(&client);
                     ExitCode::from(1)
                 }
                 Err(SubportalError::UserDenied) => {
@@ -168,7 +181,7 @@ async fn main() -> ExitCode {
             match client.call(&request).await {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(SubportalError::NoClient) => {
-                    eprintln!("subportal: daemon is not reachable");
+                    no_client_error(&client);
                     ExitCode::from(1)
                 }
                 Err(e) => {
