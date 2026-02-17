@@ -99,7 +99,6 @@ transparently.
 
 ```bash
 subportal status          # ping, show capabilities + latency
-subportal drain           # process queued requests
 subportal open <target>   # explicit open
 subportal notify ...      # explicit notify
 ```
@@ -137,16 +136,6 @@ pidfd-based caller identification that is unreliable for non-sandboxed apps.
 ### Lifecycle
 
 Started via systemd user unit or XDG autostart. Runs persistently.
-
-## Queue (Server-Side)
-
-When subportal can't reach the daemon socket:
-
-- **`notify-send`**: Queue to `~/.local/share/subportal/queue/`. Silent.
-- **`xdg-open`**: Queue and print "Queued -- will open when subportal connects."
-
-`subportal drain` replays the queue. Client shows a summary notification:
-"3 queued items from myserver" with an action to review them.
 
 ## Capability Handshake
 
@@ -189,7 +178,7 @@ auto_open_files = false   # still confirm
 | `subportald`     | Client desktop  | Rust     | Daemon, listens on Unix socket, talks to xdg-desktop-portal and D-Bus  |
 | `xdg-open`    | Server          | Rust     | Drop-in replacement, connects to subportal              |
 | `notify-send` | Server          | Rust     | Drop-in replacement                                  |
-| `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status/drain      |
+| `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status             |
 
 ## NixOS / home-manager / system-manager
 
