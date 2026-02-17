@@ -3,10 +3,9 @@
 //! Uses [ashpd](https://docs.rs/ashpd) for portal-based file/URI opening and
 //! the standard `org.freedesktop.Notifications` interface for notifications.
 
+use std::collections::HashMap;
 use std::os::fd::AsFd;
 use std::path::PathBuf;
-
-use std::collections::HashMap;
 
 use anyhow::Context;
 use ashpd::desktop::open_uri::OpenFileRequest;
