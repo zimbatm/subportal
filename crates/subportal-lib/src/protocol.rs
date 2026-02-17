@@ -485,11 +485,15 @@ mod tests {
     #[tokio::test]
     async fn wire_message_too_large() {
         let (mut client, server) = tcp_pair().await;
-        // Write a payload larger than MAX_MESSAGE_SIZE followed by NUL
-        let big = vec![b'x'; MAX_MESSAGE_SIZE + 1];
-        client.write_all(&big).await.unwrap();
-        client.write_u8(NUL).await.unwrap();
-        client.flush().await.unwrap();
+        // Spawn the writer so it runs concurrently with the reader.
+        // Writing 8 MB+ into a TCP socket blocks if the reader isn't
+        // draining, so these must not be sequential.
+        tokio::spawn(async move {
+            let big = vec![b'x'; MAX_MESSAGE_SIZE + 1];
+            client.write_all(&big).await.unwrap();
+            client.write_u8(NUL).await.unwrap();
+            client.flush().await.unwrap();
+        });
         let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
