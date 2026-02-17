@@ -6,22 +6,24 @@ subportald - subportal client daemon
 
 # SYNOPSIS
 
-subportald [*--port* _PORT_]
+subportald [*--socket* _PATH_]
 
 # DESCRIPTION
 
 *subportald* runs on the user's desktop machine and listens for
-Varlink-over-TCP requests from server-side subportal tools. Each request is
-dispatched to the local xdg-desktop-portal D-Bus interface to open URLs,
-transfer files, or show desktop notifications.
+Varlink requests on a Unix domain socket from server-side subportal tools.
+Each request is dispatched to the local xdg-desktop-portal D-Bus interface
+to open URLs, transfer files, or show desktop notifications.
 
-The daemon binds to *127.0.0.1* only. Server-side tools reach it through an
-SSH reverse port forward.
+The daemon listens on a Unix socket (by default
+_$XDG_RUNTIME_DIR/subportal/subportal.sock_). Server-side tools reach it
+through an SSH reverse socket forward.
 
 # OPTIONS
 
-*-p, --port* _PORT_
-	TCP port to listen on. Default: 19494.
+*-s, --socket* _PATH_
+	Unix socket path to listen on. Default:
+	_$XDG_RUNTIME_DIR/subportal/subportal.sock_.
 
 # CAPABILITIES
 
@@ -40,27 +42,40 @@ SSH reverse port forward.
 
 # ENVIRONMENT
 
+*SUBPORTAL_SOCKET*
+	Override the Unix socket path (same as *--socket*).
+
 *RUST_LOG*
 	Control log verbosity (e.g. _RUST_LOG=debug_).
 
 *XDG_RUNTIME_DIR*
-	Directory for temporary file storage. Falls back to _/tmp_ if unset.
+	Base directory for the default socket path and temporary file storage.
+	Falls back to _/tmp_ if unset.
 
 # TRANSPORT
 
 Server-side tools connect through an SSH reverse tunnel. On the client, the
-SSH connection must be configured to forward the subportal port:
+SSH connection must be configured to forward the subportal Unix socket:
 
 ```
 Host myserver
-    RemoteForward 127.0.0.1:19494 127.0.0.1:19494
+    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
 ```
 
 Or on the command line:
 
 ```
-ssh -R 127.0.0.1:19494:127.0.0.1:19494 myserver
+ssh -R /run/user/1000/subportal/subportal.sock:/run/user/1000/subportal/subportal.sock myserver
 ```
+
+Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
+
+# PEER IDENTITY
+
+When accepting a connection, *subportald* uses _SO_PEERCRED_ to obtain the
+PID of the connecting process. It then walks the process tree via
+_/proc/<pid>/cmdline_ to find an _sshd_ parent process and extract the SSH
+remote host. This information is logged with each request.
 
 # SYSTEMD
 

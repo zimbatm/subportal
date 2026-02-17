@@ -1,48 +1,57 @@
-//! TCP client for sending requests to the subportal daemon.
+//! Unix socket client for sending requests to the subportal daemon.
 //!
-//! The [`Client`] opens a new TCP connection for each request (one-shot
+//! The [`Client`] opens a new Unix connection for each request (one-shot
 //! pattern), sends a Varlink JSON message, and reads the response. If the
 //! daemon is unreachable, all calls return [`SubportalError::NoClient`].
 //!
-//! The target port is read from the `SUBPORTAL_PORT` environment variable,
-//! falling back to [`crate::consts::DEFAULT_PORT`].
+//! The target socket path is read from the `SUBPORTAL_SOCKET` environment
+//! variable, falling back to [`crate::consts::default_socket_path`].
 
-use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 
 use tokio::io::BufReader;
-use tokio::net::TcpStream;
+use tokio::net::UnixStream;
 
-use crate::consts::{DEFAULT_PORT, PORT_ENV};
+use crate::consts::{default_socket_path, SOCKET_PATH_ENV};
 use crate::protocol::{
     read_message, write_message, Request, Response, SubportalError, VarlinkResponse,
 };
 
-/// A client that connects to the subportal daemon over TCP.
+/// A client that connects to the subportal daemon over a Unix socket.
 pub struct Client {
-    addr: SocketAddr,
+    path: PathBuf,
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Client {
-    /// Create a new client, reading port from `SUBPORTAL_PORT` env or using the default.
+    /// Create a new client, reading the socket path from `SUBPORTAL_SOCKET` env
+    /// or using the default.
     pub fn new() -> Self {
-        let port = std::env::var(PORT_ENV)
+        let path = std::env::var(SOCKET_PATH_ENV)
             .ok()
-            .and_then(|s| s.parse::<u16>().ok())
-            .unwrap_or(DEFAULT_PORT);
+            .map(PathBuf::from)
+            .unwrap_or_else(default_socket_path);
+        Self { path }
+    }
+
+    /// Create a new client that connects to the given socket path.
+    pub fn with_path(path: impl AsRef<Path>) -> Self {
         Self {
-            addr: SocketAddr::from(([127, 0, 0, 1], port)),
+            path: path.as_ref().to_path_buf(),
         }
     }
 
-    /// Create a new client that connects to the given address.
-    pub fn with_addr(addr: SocketAddr) -> Self {
-        Self { addr }
-    }
-
-    /// Send a request and receive the response. Opens a new TCP connection each time.
+    /// Send a request and receive the response. Opens a new connection each time.
     /// Returns `SubportalError::NoClient` if the daemon is unreachable.
     pub async fn call(&self, request: &Request) -> Result<Response, SubportalError> {
-        let mut stream = TcpStream::connect(self.addr).await.map_err(|_| SubportalError::NoClient)?;
+        let mut stream = UnixStream::connect(&self.path)
+            .await
+            .map_err(|_| SubportalError::NoClient)?;
 
         let varlink_req = request.to_varlink();
         write_message(&mut stream, &varlink_req)

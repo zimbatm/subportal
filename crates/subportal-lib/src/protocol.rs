@@ -3,11 +3,10 @@
 //! This module defines the typed request/response enums ([`Request`],
 //! [`Response`]), the corresponding Varlink wire types ([`VarlinkRequest`],
 //! [`VarlinkResponse`]), domain errors ([`SubportalError`]), and async
-//! functions for reading/writing NUL-delimited JSON messages over TCP.
+//! functions for reading/writing NUL-delimited JSON messages.
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
 use crate::consts::MAX_MESSAGE_SIZE;
 
@@ -232,7 +231,7 @@ impl SubportalError {
 }
 
 // ---------------------------------------------------------------------------
-// Wire I/O: read/write NUL-delimited JSON over TCP
+// Wire I/O: read/write NUL-delimited JSON
 // ---------------------------------------------------------------------------
 
 /// Read a NUL-delimited JSON message from a buffered reader.
@@ -254,8 +253,11 @@ pub async fn read_message<T: serde::de::DeserializeOwned>(
     Ok(msg)
 }
 
-/// Write a NUL-delimited JSON message to a TCP stream.
-pub async fn write_message<T: Serialize>(stream: &mut TcpStream, msg: &T) -> anyhow::Result<()> {
+/// Write a NUL-delimited JSON message to an async writer.
+pub async fn write_message<T: Serialize>(
+    stream: &mut (impl tokio::io::AsyncWrite + Unpin),
+    msg: &T,
+) -> anyhow::Result<()> {
     let data = serde_json::to_vec(msg)?;
     stream.write_all(&data).await?;
     stream.write_u8(NUL).await?;
@@ -266,8 +268,7 @@ pub async fn write_message<T: Serialize>(stream: &mut TcpStream, msg: &T) -> any
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncWriteExt, BufReader};
-    use tokio::net::TcpListener;
+    use tokio::io::{AsyncWriteExt, BufReader, DuplexStream};
 
     // -----------------------------------------------------------------------
     // Tier 1 -- Protocol unit tests (no I/O)
@@ -471,20 +472,16 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Tier 2 -- Wire format tests (real TCP, async)
+    // Tier 2 -- Wire format tests (in-memory duplex, async)
     // -----------------------------------------------------------------------
 
-    async fn tcp_pair() -> (TcpStream, TcpStream) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let client = TcpStream::connect(addr).await.unwrap();
-        let (server, _) = listener.accept().await.unwrap();
-        (client, server)
+    fn duplex_pair() -> (DuplexStream, DuplexStream) {
+        tokio::io::duplex(MAX_MESSAGE_SIZE + 1024)
     }
 
     #[tokio::test]
     async fn wire_round_trip_request() {
-        let (mut client, server) = tcp_pair().await;
+        let (mut client, server) = duplex_pair();
         let req = VarlinkRequest {
             method: "io.subportal.Ping".into(),
             parameters: serde_json::Value::Object(Default::default()),
@@ -496,7 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn wire_round_trip_response() {
-        let (client, mut server) = tcp_pair().await;
+        let (client, mut server) = duplex_pair();
         let resp = VarlinkResponse {
             parameters: Some(serde_json::json!({"version": "0.1.0"})),
             error: None,
@@ -509,7 +506,7 @@ mod tests {
 
     #[tokio::test]
     async fn wire_multiple_messages() {
-        let (mut client, server) = tcp_pair().await;
+        let (mut client, server) = duplex_pair();
         for i in 0..3 {
             let req = VarlinkRequest {
                 method: format!("io.subportal.Test{i}"),
@@ -526,10 +523,8 @@ mod tests {
 
     #[tokio::test]
     async fn wire_message_too_large() {
-        let (mut client, server) = tcp_pair().await;
+        let (mut client, server) = duplex_pair();
         // Spawn the writer so it runs concurrently with the reader.
-        // Writing 8 MB+ into a TCP socket blocks if the reader isn't
-        // draining, so these must not be sequential.
         tokio::spawn(async move {
             let big = vec![b'x'; MAX_MESSAGE_SIZE + 1];
             client.write_all(&big).await.unwrap();
@@ -544,7 +539,7 @@ mod tests {
 
     #[tokio::test]
     async fn wire_empty_message() {
-        let (mut client, server) = tcp_pair().await;
+        let (mut client, server) = duplex_pair();
         // Send just a NUL byte -- empty payload
         client.write_u8(NUL).await.unwrap();
         client.flush().await.unwrap();
@@ -554,7 +549,7 @@ mod tests {
 
     #[tokio::test]
     async fn wire_invalid_json() {
-        let (mut client, server) = tcp_pair().await;
+        let (mut client, server) = duplex_pair();
         client.write_all(b"not json at all").await.unwrap();
         client.write_u8(NUL).await.unwrap();
         client.flush().await.unwrap();
@@ -564,7 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn wire_connection_closed() {
-        let (client, server) = tcp_pair().await;
+        let (client, server) = duplex_pair();
         // Close the client side without sending NUL
         drop(client);
         let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;

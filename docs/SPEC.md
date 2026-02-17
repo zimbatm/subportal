@@ -11,33 +11,37 @@ desktop environment.
 
 | Capability   | Direction        | Description                                    |
 | ------------ | ---------------- | ---------------------------------------------- |
-| **OpenURI**  | server → client  | Open a URL in the client's browser             |
-| **OpenFile** | server → client  | Transfer a file (<5MB) and open it on client   |
-| **Notify**   | server → client  | Show a desktop notification                    |
-| **Ping**     | server → client  | Check connectivity, discover capabilities      |
+| **OpenURI**  | server -> client  | Open a URL in the client's browser             |
+| **OpenFile** | server -> client  | Transfer a file (<5MB) and open it on client   |
+| **Notify**   | server -> client  | Show a desktop notification                    |
+| **Ping**     | server -> client  | Check connectivity, discover capabilities      |
 
-Deferred to v2: secrets/keychain, clipboard, FileChooser (client → server),
+Deferred to v2: secrets/keychain, clipboard, FileChooser (client -> server),
 large file chunked transfer.
 
 ## Transport
 
-TCP over SSH reverse port forwarding. Default port `19494`.
+Unix domain socket over SSH reverse socket forwarding. Default socket path:
+`$XDG_RUNTIME_DIR/subportal/subportal.sock`.
 
 Client `~/.ssh/config`:
 
 ```
 Host myserver
-    RemoteForward 127.0.0.1:19494 127.0.0.1:19494
+    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
 ```
 
-Server-side commands connect to `localhost:$SUBPORTAL_PORT` (default `19494`). If
-nothing is listening, subportal is unavailable.
+Server-side commands connect to `$SUBPORTAL_SOCKET` (default
+`$XDG_RUNTIME_DIR/subportal/subportal.sock`). If nothing is listening,
+subportal is unavailable.
 
 No server-side SSH config changes required.
 
+Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
+
 ## Protocol
 
-Varlink over TCP. Each connection is one method call.
+Varlink over Unix socket. Each connection is one method call.
 
 ```
 interface io.subportal
@@ -81,15 +85,15 @@ transparently.
 
 #### `xdg-open <target>`
 
-- If `target` is a URL → `OpenURI`
-- If `target` is a file → read file, `OpenFile` with detected MIME type
-- If subportal unavailable → exit with error
+- If `target` is a URL -> `OpenURI`
+- If `target` is a file -> read file, `OpenFile` with detected MIME type
+- If subportal unavailable -> exit with error
 
 #### `notify-send [options] <title> [body]`
 
 - Parses standard `notify-send` flags (`-u`, `-i`, etc.)
 - Forwards via `Notify`
-- If subportal unavailable → silently fail (notifications are best-effort)
+- If subportal unavailable -> silently fail (notifications are best-effort)
 
 ### Explicit CLI
 
@@ -100,17 +104,26 @@ subportal open <target>   # explicit open
 subportal notify ...      # explicit notify
 ```
 
-## Client Daemon — `subportald`
+## Client Daemon -- `subportald`
 
-Runs on the user's desktop machine. Listens on `127.0.0.1:19494`.
+Runs on the user's desktop machine. Listens on
+`$XDG_RUNTIME_DIR/subportal/subportal.sock`.
+
+### Peer Identity
+
+When accepting a connection, `subportald` uses `SO_PEERCRED` to obtain the
+PID of the connecting process. It then walks the process tree via
+`/proc/<pid>/cmdline` to find an `sshd` parent process and extract the SSH
+remote host (e.g. `sshd: user@1.2.3.4`). This information is logged with
+each request and can be used for per-server trust policies.
 
 ### Request handling
 
 | Method       | Behavior                                                                                     |
 | ------------ | -------------------------------------------------------------------------------------------- |
 | `Ping`       | Return supported capabilities + version                                                      |
-| `OpenURI`    | Show confirmation via xdg-desktop-portal `OpenURI` → open in browser                        |
-| `OpenFile`   | Show confirmation (name, size, MIME) → save to `$XDG_RUNTIME_DIR/subportal/<name>` → open it   |
+| `OpenURI`    | Show confirmation via xdg-desktop-portal `OpenURI` -> open in browser                        |
+| `OpenFile`   | Show confirmation (name, size, MIME) -> save to `$XDG_RUNTIME_DIR/subportal/<name>` -> open it   |
 | `Notify`     | Forward to `org.freedesktop.Notifications` D-Bus interface (no confirmation needed)          |
 
 Confirmation dialogs use the local xdg-desktop-portal D-Bus interface. On
@@ -127,10 +140,10 @@ Started via systemd user unit or XDG autostart. Runs persistently.
 
 ## Queue (Server-Side)
 
-When subportal can't reach `localhost:$SUBPORTAL_PORT`:
+When subportal can't reach the daemon socket:
 
 - **`notify-send`**: Queue to `~/.local/share/subportal/queue/`. Silent.
-- **`xdg-open`**: Queue and print "Queued — will open when subportal connects."
+- **`xdg-open`**: Queue and print "Queued -- will open when subportal connects."
 
 `subportal drain` replays the queue. Client shows a summary notification:
 "3 queued items from myserver" with an action to review them.
@@ -150,6 +163,12 @@ capability, it gets `io.subportal.NotSupported` without a round-trip.
 ## Security Model
 
 - **Transport**: Encrypted by SSH. No additional encryption needed.
+- **Access control**: Unix socket permissions restrict access to the owning
+  user. Only the user who owns the socket can connect, unlike TCP localhost
+  which is accessible by any local user.
+- **Server identity**: `SO_PEERCRED` on the Unix socket provides the PID of
+  the connecting process. The daemon resolves this to the SSH remote host via
+  `/proc/<pid>/cmdline`, enabling per-server logging and trust policies.
 - **OpenURI/OpenFile**: User confirmation required before opening.
 - **Notify**: No confirmation (passive, low risk).
 
@@ -167,7 +186,7 @@ auto_open_files = false   # still confirm
 
 | Component     | Runs on         | Language | Description                                          |
 | ------------- | --------------- | -------- | ---------------------------------------------------- |
-| `subportald`     | Client desktop  | Rust     | Daemon, listens on TCP, talks to xdg-desktop-portal and D-Bus  |
+| `subportald`     | Client desktop  | Rust     | Daemon, listens on Unix socket, talks to xdg-desktop-portal and D-Bus  |
 | `xdg-open`    | Server          | Rust     | Drop-in replacement, connects to subportal              |
 | `notify-send` | Server          | Rust     | Drop-in replacement                                  |
 | `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status/drain      |
@@ -203,7 +222,7 @@ NixOS:
 {
   imports = [ inputs.subportal.nixosModules.subportald ];
   services.subportald.enable = true;
-  # services.subportald.port = 19494;                   # default
+  # services.subportald.socketPath = "%t/subportal/subportal.sock";  # default
   # services.subportald.sshHosts = [ "myserver" ];      # auto-configure RemoteForward
 }
 ```
@@ -251,6 +270,6 @@ to disable them.
 
 - Secrets/keychain forwarding (secret-tool drop-in)
 - Clipboard forwarding
-- FileChooser (client → server file picker)
+- FileChooser (client -> server file picker)
 - Chunked file transfer (large files)
 - Multiple server connections (subportald manages several tunnels)

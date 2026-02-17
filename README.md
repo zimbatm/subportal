@@ -16,24 +16,25 @@ connection.
 ```
 Server (headless)                       Client (your desktop)
                                         subportald (daemon)
-xdg-open https://example.com  ──TCP──>    -> confirmation dialog
-notify-send "Build done"      ──(19494)>  -> desktop notification
-subportal open ./report.pdf   ────────>   -> opens in PDF viewer
+xdg-open https://example.com  ─────>     -> confirmation dialog
+notify-send "Build done"      ─(unix)─>  -> desktop notification
+subportal open ./report.pdf   ─(sock)─>  -> opens in PDF viewer
 ```
 
-The server-side tools connect to `localhost:19494`, which SSH reverse-forwards
-to the client daemon (`subportald`). The daemon uses
+The server-side tools connect to a Unix domain socket
+(`$XDG_RUNTIME_DIR/subportal/subportal.sock`), which SSH reverse-forwards to
+the client daemon (`subportald`). The daemon uses
 [xdg-desktop-portal](https://flatpak.github.io/xdg-desktop-portal/) D-Bus
 APIs to show native dialogs and notifications on whatever desktop environment
 you run (GNOME, KDE, Sway, ...).
 
-The wire protocol is [Varlink](https://varlink.org/) over TCP -- one JSON
-message per connection, NUL-delimited.
+The wire protocol is [Varlink](https://varlink.org/) over a Unix socket -- one
+JSON message per connection, NUL-delimited.
 
 ## Prerequisites
 
 - A Linux desktop with xdg-desktop-portal (GNOME, KDE, Sway, etc.)
-- An SSH connection to the remote server
+- An SSH connection to the remote server (OpenSSH 6.7+ for Unix socket forwarding)
 - Rust toolchain (for building from source)
 
 ## Building
@@ -63,19 +64,22 @@ Binaries are placed in `target/release/`:
 
 ## SSH setup
 
-Configure SSH to reverse-forward port 19494 from the server back to your
-desktop. Add this to your `~/.ssh/config`:
+Configure SSH to reverse-forward the subportal Unix socket from the server
+back to your desktop. Add this to your `~/.ssh/config`:
 
 ```
 Host myserver
-    RemoteForward 127.0.0.1:19494 127.0.0.1:19494
+    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
 ```
 
 Or pass it on the command line:
 
 ```sh
-ssh -R 127.0.0.1:19494:127.0.0.1:19494 myserver
+ssh -R /run/user/1000/subportal/subportal.sock:/run/user/1000/subportal/subportal.sock myserver
 ```
+
+Replace `1000` with your actual UID on both machines, or use
+`$XDG_RUNTIME_DIR/subportal/subportal.sock` if your shell expands it.
 
 No server-side SSH configuration changes are required.
 
@@ -89,7 +93,8 @@ Start the daemon on your desktop machine:
 subportald
 ```
 
-It listens on `127.0.0.1:19494` by default. Use `--port` to override.
+It listens on `$XDG_RUNTIME_DIR/subportal/subportal.sock` by default. Use
+`--socket` to override.
 
 ### Server side
 
@@ -141,7 +146,7 @@ Shows the daemon version, round-trip latency, and supported capabilities.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SUBPORTAL_PORT` | `19494` | Override the TCP port used by server-side tools |
+| `SUBPORTAL_SOCKET` | `$XDG_RUNTIME_DIR/subportal/subportal.sock` | Override the Unix socket path used by server-side tools |
 | `RUST_LOG` | -- | Control log verbosity (e.g. `RUST_LOG=debug`) |
 
 ## V1 capabilities
@@ -156,11 +161,16 @@ Shows the daemon version, round-trip latency, and supported capabilities.
 ## Security
 
 - **Transport**: All traffic is encrypted by SSH. No additional encryption is
-  needed since the TCP connection only traverses the SSH tunnel.
+  needed since the Unix socket connection only traverses the SSH tunnel.
+- **Access control**: Unix socket permissions restrict access to the owning
+  user. Only the socket owner can connect, unlike TCP localhost which is
+  accessible by any local user.
+- **Server identity**: The daemon uses `SO_PEERCRED` to identify the PID of
+  the connecting process and resolves it to the SSH remote host via
+  `/proc/<pid>/cmdline`. This enables per-server logging and trust policies.
 - **OpenURI / OpenFile**: The client shows a confirmation dialog before
   opening anything. The user must explicitly approve each request.
 - **Notify**: No confirmation required (passive, low risk).
-- **Binding**: Both ends bind to `127.0.0.1` only -- no network exposure.
 
 ## Architecture
 

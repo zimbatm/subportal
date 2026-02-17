@@ -20,7 +20,7 @@ explicitly and provides richer output such as latency and capability
 reporting.
 
 All commands connect to the subportal client daemon (*subportald*) through an
-SSH reverse tunnel on localhost.
+SSH reverse tunnel via a Unix domain socket.
 
 # COMMANDS
 
@@ -50,27 +50,30 @@ SSH reverse tunnel on localhost.
 
 # ENVIRONMENT
 
-*SUBPORTAL_PORT*
-	Override the TCP port used to connect to the daemon. Default: 19494.
+*SUBPORTAL_SOCKET*
+	Override the Unix socket path used to connect to the daemon. Default:
+	_$XDG_RUNTIME_DIR/subportal/subportal.sock_.
 
 *RUST_LOG*
 	Control log verbosity (e.g. _RUST_LOG=debug_).
 
 # TRANSPORT
 
-The connection to the daemon goes through an SSH reverse tunnel. Configure
-it in *~/.ssh/config*:
+The connection to the daemon goes through an SSH reverse tunnel using Unix
+socket forwarding. Configure it in *~/.ssh/config*:
 
 ```
 Host myserver
-    RemoteForward 127.0.0.1:19494 127.0.0.1:19494
+    RemoteForward /run/user/1000/subportal/subportal.sock /run/user/1000/subportal/subportal.sock
 ```
 
 Or on the command line:
 
 ```
-ssh -R 127.0.0.1:19494:127.0.0.1:19494 myserver
+ssh -R /run/user/1000/subportal/subportal.sock:/run/user/1000/subportal/subportal.sock myserver
 ```
+
+Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 
 # SEE ALSO
 

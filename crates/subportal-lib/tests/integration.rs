@@ -1,23 +1,24 @@
-use std::net::SocketAddr;
-
 use subportal_lib::client::Client;
 use subportal_lib::protocol::{Request, Response, SubportalError};
 use subportal_lib::server::Server;
 
-/// Spawn a server that handles exactly one request using the given function,
-/// and return a client connected to the server's ephemeral port.
+/// Create a temp directory and return a socket path inside it, along with
+/// a server bound to that path and a client connected to it.
 async fn spawn_server(
     handler: impl Fn(Request) -> Result<Response, SubportalError> + Send + 'static,
 ) -> (Client, tokio::task::JoinHandle<()>) {
-    let server = Server::bind(0).await.unwrap();
-    let addr: SocketAddr = server.local_addr().unwrap();
-    let client = Client::with_addr(addr);
+    let tmp = tempfile::tempdir().unwrap();
+    let sock = tmp.path().join("test.sock");
+    let server = Server::bind(&sock).await.unwrap();
+    let client = Client::with_path(&sock);
     let handle = tokio::spawn(async move {
         let (req, responder) = server.accept().await.unwrap();
         match handler(req) {
             Ok(resp) => responder.send_ok(resp).await.unwrap(),
             Err(err) => responder.send_error(err).await.unwrap(),
         }
+        // Keep tmp alive until the handler finishes so the socket isn't removed.
+        drop(tmp);
     });
     (client, handle)
 }
@@ -201,17 +202,19 @@ async fn error_file_too_large() {
 
 #[tokio::test]
 async fn no_server_returns_no_client() {
-    // Connect to a port where nothing is listening
-    let client = Client::with_addr(SocketAddr::from(([127, 0, 0, 1], 0)));
+    let tmp = tempfile::tempdir().unwrap();
+    let sock = tmp.path().join("nonexistent.sock");
+    let client = Client::with_path(sock);
     let err = client.call(&Request::Ping).await.unwrap_err();
     assert_eq!(err, SubportalError::NoClient);
 }
 
 #[tokio::test]
 async fn multiple_sequential_requests() {
-    let server = Server::bind(0).await.unwrap();
-    let addr: SocketAddr = server.local_addr().unwrap();
-    let client = Client::with_addr(addr);
+    let tmp = tempfile::tempdir().unwrap();
+    let sock = tmp.path().join("test.sock");
+    let server = Server::bind(&sock).await.unwrap();
+    let client = Client::with_path(&sock);
 
     let handle = tokio::spawn(async move {
         for _ in 0..3 {

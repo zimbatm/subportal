@@ -14,10 +14,10 @@ in
 
     package = lib.mkPackageOption flake.packages.${pkgs.system} "subportald" { };
 
-    port = lib.mkOption {
-      type = lib.types.port;
-      default = 19494;
-      description = "TCP port for subportald to listen on.";
+    socketPath = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/subportal/subportal.sock";
+      description = "Unix socket path for subportald to listen on.";
     };
 
     user = lib.mkOption {
@@ -33,7 +33,8 @@ in
       wantedBy = [ "system-manager.target" ];
 
       serviceConfig = {
-        ExecStart = "${lib.getExe cfg.package} --port ${toString cfg.port}";
+        ExecStart = "${lib.getExe cfg.package} --socket ${cfg.socketPath}";
+        RuntimeDirectory = "subportal";
         Restart = "on-failure";
         RestartSec = 5;
         User = cfg.user;
