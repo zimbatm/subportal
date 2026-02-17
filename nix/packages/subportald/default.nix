@@ -22,12 +22,17 @@ pkgs.rustPlatform.buildRustPackage {
     "subportald"
   ];
 
-  nativeBuildInputs = [ pkgs.pkg-config ];
+  nativeBuildInputs = [
+    pkgs.pkg-config
+    pkgs.scdoc
+  ];
 
   buildInputs = [ pkgs.dbus ];
 
   postInstall = ''
     install -Dm644 crates/subportald/subportald.desktop $out/share/applications/subportald.desktop
+    mkdir -p $out/share/man/man1
+    scdoc < crates/subportald/subportald.1.scd > $out/share/man/man1/subportald.1
   '';
 
   meta = {
