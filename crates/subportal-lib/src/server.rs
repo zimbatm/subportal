@@ -5,11 +5,12 @@
 //! [`Request`] and a [`Responder`] that the caller uses to send back either
 //! a success [`Response`] or a [`SubportalError`].
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::consts::default_socket_path;
 use crate::protocol::{
@@ -21,6 +22,8 @@ use crate::protocol::{
 pub struct PeerInfo {
     /// PID of the connecting process (from `SO_PEERCRED`).
     pub pid: Option<u32>,
+    /// UID of the connecting process (from `SO_PEERCRED`).
+    pub uid: Option<u32>,
     /// SSH remote host, resolved from `/proc/<pid>/cmdline` if the peer is an
     /// `sshd` or `ssh` process.
     pub ssh_host: Option<String>,
@@ -30,6 +33,9 @@ pub struct PeerInfo {
 pub struct Server {
     listener: UnixListener,
     path: PathBuf,
+    /// Maps SSH ControlMaster socket paths to their SSH host names.
+    /// Used to resolve the host when the ControlMaster has rewritten its cmdline.
+    control_path_hosts: HashMap<PathBuf, String>,
 }
 
 /// Holds a parsed request and the stream, allowing the handler to send a response.
@@ -58,12 +64,25 @@ impl Server {
 
         let listener = UnixListener::bind(&path)?;
         info!("listening on {}", path.display());
-        Ok(Self { listener, path })
+        Ok(Self {
+            listener,
+            path,
+            control_path_hosts: HashMap::new(),
+        })
     }
 
     /// Return the socket path the server is bound to.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Set the ControlMaster control-path-to-hostname mapping.
+    ///
+    /// When SSH ControlMaster rewrites its cmdline to `ssh: <path> [mux]`,
+    /// the original hostname is lost. This map lets us look it up from the
+    /// control socket path.
+    pub fn set_control_path_hosts(&mut self, map: HashMap<PathBuf, String>) {
+        self.control_path_hosts = map;
     }
 
     /// Bind using the default socket path.
@@ -75,11 +94,41 @@ impl Server {
     pub async fn accept(&self) -> anyhow::Result<(Request, Responder)> {
         let (mut stream, _addr) = self.listener.accept().await?;
 
-        let peer = resolve_peer(&stream);
+        let peer = resolve_peer(&stream, &self.control_path_hosts);
+
+        // Reject connections from different, non-root UIDs (matches OpenSSH behaviour).
+        if let Some(uid) = peer.uid {
+            let my_uid = unsafe { libc::getuid() };
+            if uid != 0 && uid != my_uid {
+                warn!(
+                    peer_uid = uid,
+                    server_uid = my_uid,
+                    "rejecting connection: uid mismatch"
+                );
+                anyhow::bail!(
+                    "uid mismatch: peer uid {} != server uid {}",
+                    uid,
+                    my_uid
+                );
+            }
+        }
+
         if let Some(ref host) = peer.ssh_host {
-            tracing::debug!("connection from SSH host {host} (pid {:?})", peer.pid);
+            info!("connection from ssh host {host} (pid {:?})", peer.pid);
+        } else if let Some(pid) = peer.pid {
+            let cmdline = std::fs::read(format!("/proc/{pid}/cmdline"))
+                .ok()
+                .map(|b| {
+                    b.split(|&c| c == 0)
+                        .filter_map(|s| std::str::from_utf8(s).ok())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            info!("connection from pid {pid}, ssh host not resolved (cmdline: {cmdline})");
         } else {
-            tracing::debug!("connection from pid {:?}", peer.pid);
+            info!("connection from unknown peer");
         }
 
         let varlink_req: VarlinkRequest = read_message(&mut BufReader::new(&mut stream)).await?;
@@ -111,26 +160,36 @@ impl Responder {
 }
 
 /// Resolve peer information from a Unix stream using `SO_PEERCRED`.
-fn resolve_peer(stream: &UnixStream) -> PeerInfo {
-    let pid = stream
-        .peer_cred()
-        .ok()
-        .and_then(|cred| cred.pid())
-        .map(|p| p as u32);
+fn resolve_peer(
+    stream: &UnixStream,
+    control_path_hosts: &HashMap<PathBuf, String>,
+) -> PeerInfo {
+    let cred = stream.peer_cred().ok();
 
-    let ssh_host = pid.and_then(resolve_ssh_host);
+    let pid = cred.as_ref().and_then(|c| c.pid()).map(|p| p as u32);
+    let uid = cred.as_ref().map(|c| c.uid());
 
-    PeerInfo { pid, ssh_host }
+    let ssh_host = pid.and_then(|p| resolve_ssh_host(p, control_path_hosts));
+
+    PeerInfo { pid, uid, ssh_host }
 }
 
 /// Try to resolve the SSH host from `/proc/<pid>/cmdline`.
 ///
 /// Walks the process tree upward looking for an `ssh` client process or an
-/// `sshd` server process and extracts the remote host.
-fn resolve_ssh_host(pid: u32) -> Option<String> {
+/// `sshd` server process and extracts the remote host. Also checks for SSH
+/// ControlMaster processes whose cmdline has been rewritten to
+/// `ssh: <control_path> [mux]` and looks up the host via the control path map.
+fn resolve_ssh_host(
+    pid: u32,
+    control_path_hosts: &HashMap<PathBuf, String>,
+) -> Option<String> {
     let mut current_pid = pid;
     for _ in 0..10 {
         if let Some(host) = parse_ssh_host_from_cmdline(current_pid) {
+            return Some(host);
+        }
+        if let Some(host) = resolve_mux_master_host(current_pid, control_path_hosts) {
             return Some(host);
         }
         match get_parent_pid(current_pid) {
@@ -249,6 +308,36 @@ fn parse_ssh_client_host(args: &[&str]) -> Option<String> {
     }
 }
 
+/// Resolve the SSH host from a ControlMaster process by matching its control
+/// socket path against the known host map.
+///
+/// When SSH ControlMaster is active, it rewrites its cmdline via `setproctitle`
+/// to `ssh: <control_path> [mux]`, losing the original hostname. We extract
+/// the control path and look it up in the pre-built map.
+fn resolve_mux_master_host(
+    pid: u32,
+    control_path_hosts: &HashMap<PathBuf, String>,
+) -> Option<String> {
+    if control_path_hosts.is_empty() {
+        return None;
+    }
+    let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let title = std::str::from_utf8(&cmdline)
+        .ok()?
+        .trim_end_matches('\0');
+    let path = parse_mux_master_path(title)?;
+    control_path_hosts.get(Path::new(path)).cloned()
+}
+
+/// Extract the control socket path from an SSH ControlMaster process title.
+///
+/// The ControlMaster sets its process title to `ssh: <control_path> [mux]`.
+/// Returns `None` if the title doesn't match this pattern.
+fn parse_mux_master_path(title: &str) -> Option<&str> {
+    let rest = title.strip_prefix("ssh: ")?;
+    rest.strip_suffix(" [mux]").filter(|p| !p.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +444,39 @@ mod tests {
     #[test]
     fn ssh_only_flags() {
         assert_eq!(parse_ssh_client_host(&["-v", "-N"]), None);
+    }
+
+    #[test]
+    fn mux_master_path() {
+        assert_eq!(
+            parse_mux_master_path("ssh: /home/user/.ssh/control-abc123 [mux]"),
+            Some("/home/user/.ssh/control-abc123")
+        );
+    }
+
+    #[test]
+    fn mux_master_path_with_hash() {
+        assert_eq!(
+            parse_mux_master_path(
+                "ssh: /home/zimbatm/.ssh/control-cd85c872044efab2587aaeb129ac8de9846a47ad [mux]"
+            ),
+            Some("/home/zimbatm/.ssh/control-cd85c872044efab2587aaeb129ac8de9846a47ad")
+        );
+    }
+
+    #[test]
+    fn mux_master_path_not_mux() {
+        assert_eq!(parse_mux_master_path("ssh: [stopped mux]"), None);
+    }
+
+    #[test]
+    fn mux_master_path_not_ssh() {
+        assert_eq!(parse_mux_master_path("bash"), None);
+    }
+
+    #[test]
+    fn mux_master_path_empty() {
+        assert_eq!(parse_mux_master_path("ssh:  [mux]"), None);
     }
 }
 
