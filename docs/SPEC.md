@@ -83,14 +83,13 @@ transparently.
 
 - If `target` is a URL → `OpenURI`
 - If `target` is a file → read file, `OpenFile` with detected MIME type
-- If subportal unavailable → fall back to real `xdg-open`, then error
+- If subportal unavailable → exit with error
 
 #### `notify-send [options] <title> [body]`
 
 - Parses standard `notify-send` flags (`-u`, `-i`, etc.)
 - Forwards via `Notify`
-- If subportal unavailable → fall back to real `notify-send`, then silently fail
-  (notifications are best-effort)
+- If subportal unavailable → silently fail (notifications are best-effort)
 
 ### Explicit CLI
 
