@@ -31,8 +31,11 @@ pub async fn open_file(name: &str, _mime: &str, content_b64: &str) -> anyhow::Re
         .decode(content_b64)
         .context("invalid base64 content")?;
 
-    // Write to $XDG_RUNTIME_DIR/subportal/<name> (or /tmp/subportal/<name>)
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
+    // Write to $XDG_RUNTIME_DIR/subportal/<name>
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
+        let uid = unsafe { libc::getuid() };
+        format!("/run/user/{uid}")
+    });
     let dir = PathBuf::from(runtime_dir).join("subportal");
     tokio::fs::create_dir_all(&dir).await?;
 

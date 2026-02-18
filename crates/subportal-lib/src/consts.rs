@@ -19,13 +19,14 @@ pub const SOCKET_PATH_ENV: &str = "SUBPORTAL_SOCKET";
 
 /// Return the default socket path: `$XDG_RUNTIME_DIR/subportal.sock`.
 ///
-/// Falls back to `/tmp/subportal-<uid>.sock` if `XDG_RUNTIME_DIR` is not set.
+/// Falls back to `/run/user/<uid>/subportal.sock` if `XDG_RUNTIME_DIR` is not
+/// set. This assumes a systemd-based system where `/run/user/<uid>` exists.
 pub fn default_socket_path() -> PathBuf {
     match std::env::var("XDG_RUNTIME_DIR") {
         Ok(dir) => PathBuf::from(dir).join(SOCKET_NAME),
         Err(_) => {
             let uid = unsafe { libc::getuid() };
-            PathBuf::from(format!("/tmp/subportal-{uid}.sock"))
+            PathBuf::from(format!("/run/user/{uid}")).join(SOCKET_NAME)
         }
     }
 }

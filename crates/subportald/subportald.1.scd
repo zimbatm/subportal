@@ -51,7 +51,7 @@ through an SSH reverse socket forward.
 
 *XDG_RUNTIME_DIR*
 	Base directory for the default socket path and temporary file storage.
-	Falls back to _/tmp_ if unset.
+	Falls back to _/run/user/<uid>_ if unset.
 
 # TRANSPORT
 

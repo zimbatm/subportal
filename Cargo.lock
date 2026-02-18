@@ -1102,6 +1102,7 @@ dependencies = [
  "ashpd",
  "base64",
  "clap",
+ "libc",
  "subportal-lib",
  "tokio",
  "tracing",

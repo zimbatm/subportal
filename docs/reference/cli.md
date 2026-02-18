@@ -30,5 +30,5 @@ These apply to all binaries.
 | `XDG_RUNTIME_DIR`   | (set by system)                      | Base directory for the default socket path |
 | `RUST_LOG`          | (unset)                              | Control log verbosity (e.g. `debug`, `info`) |
 
-When neither `SUBPORTAL_SOCKET` nor `XDG_RUNTIME_DIR` is set, the socket
-path falls back to `/tmp/subportal-<uid>.sock`.
+When `XDG_RUNTIME_DIR` is not set, the socket path falls back to
+`/run/user/<uid>/subportal.sock`. This assumes a systemd-based system.
