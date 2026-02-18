@@ -1,4 +1,8 @@
-# subportal
+# subportal specification
+
+> For user-facing documentation, see the [docs index](index.md).
+> This file is the design specification for the subportal protocol and
+> components.
 
 xdg-desktop-portal, but the sandbox boundary is an SSH connection.
 

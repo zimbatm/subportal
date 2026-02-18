@@ -13,8 +13,8 @@ notify-send [_OPTIONS_] _TITLE_ [_BODY_]
 This is the subportal drop-in replacement for notify-send(1). When placed
 earlier in *$PATH* than the real notify-send, it transparently forwards
 notifications through an SSH tunnel to the subportal client daemon
-(*subportald*), which displays them on the local desktop using
-xdg-desktop-portal.
+(*subportald*), which displays them on the local desktop via the standard
+_org.freedesktop.Notifications_ D-Bus interface.
 
 Notifications are delivered without user confirmation (passive, low risk).
 
@@ -86,6 +86,10 @@ Or on the command line:
 ```
 ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 ```
+
+The server's _sshd_config_ must include *StreamLocalBindUnlink yes* so that
+stale sockets from disconnected sessions are cleaned up before binding new
+ones.
 
 Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 

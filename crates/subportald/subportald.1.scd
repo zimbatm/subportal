@@ -12,8 +12,9 @@ subportald [*--socket* _PATH_]
 
 *subportald* runs on the user's desktop machine and listens for
 Varlink requests on a Unix domain socket from server-side subportal tools.
-Each request is dispatched to the local xdg-desktop-portal D-Bus interface
-to open URLs, transfer files, or show desktop notifications.
+URL and file open requests are dispatched to the local xdg-desktop-portal
+D-Bus interface. Notifications are sent to the standard
+_org.freedesktop.Notifications_ D-Bus interface directly.
 
 The daemon listens on a Unix socket (by default
 _$XDG_RUNTIME_DIR/subportal.sock_). Server-side tools reach it
@@ -67,6 +68,10 @@ Or on the command line:
 ```
 ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 ```
+
+The server's _sshd_config_ must include *StreamLocalBindUnlink yes* so that
+stale sockets from disconnected sessions are cleaned up before binding new
+ones.
 
 Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 

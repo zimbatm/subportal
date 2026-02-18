@@ -75,6 +75,10 @@ Or on the command line:
 ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 ```
 
+The server's _sshd_config_ must include *StreamLocalBindUnlink yes* so that
+stale sockets from disconnected sessions are cleaned up before binding new
+ones.
+
 Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 
 # SEE ALSO
