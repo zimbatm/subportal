@@ -28,6 +28,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Ensure sshd cleans up stale Unix sockets before binding new ones.
+    # Without this, RemoteForward will fail after a disconnected SSH session
+    # leaves behind /run/user/<uid>/subportal.sock.
+    environment.etc."ssh/sshd_config.d/stream-local.conf".text = ''
+      StreamLocalBindUnlink yes
+    '';
+
     environment.systemPackages =
       let
         pkg = cfg.package;

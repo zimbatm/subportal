@@ -35,7 +35,9 @@ Server-side commands connect to `$SUBPORTAL_SOCKET` (default
 `$XDG_RUNTIME_DIR/subportal.sock`). If nothing is listening,
 subportal is unavailable.
 
-No server-side SSH config changes required.
+Server-side `sshd_config` must include `StreamLocalBindUnlink yes` so that
+stale sockets from disconnected sessions are cleaned up before binding new
+ones. The NixOS and system-manager modules set this automatically.
 
 Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
 

@@ -81,7 +81,9 @@ ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
 Replace `1000` with your actual UID on both machines, or use
 `$XDG_RUNTIME_DIR/subportal.sock` if your shell expands it.
 
-No server-side SSH configuration changes are required.
+The server's `sshd_config` must include `StreamLocalBindUnlink yes` so that
+stale sockets from disconnected sessions are cleaned up before binding new
+ones. The NixOS and system-manager modules set this automatically.
 
 ## Usage
 
