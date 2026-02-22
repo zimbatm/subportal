@@ -1,9 +1,9 @@
 //! Shared library for the subportal protocol.
 //!
-//! subportal bridges a headless SSH server to the user's local desktop by
-//! forwarding requests like "open URL" and "show notification" through an SSH
-//! tunnel. This crate provides the building blocks used by both the client
-//! daemon (`subportald`) and the server-side CLI tools.
+//! subportal bridges a headless server to the user's local desktop by
+//! forwarding requests like "open URL" and "show notification" via iroh
+//! (peer-to-peer QUIC). This crate provides the building blocks used by the
+//! agent, the client daemon (`subportald`), and the server-side CLI tools.
 //!
 //! # Modules
 //!

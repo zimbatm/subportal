@@ -1,127 +1,108 @@
-# How to configure SSH for subportal
+# How to enroll a desktop client
 
-subportal uses SSH reverse forwarding to tunnel a Unix domain socket from the
-remote server back to your desktop. This guide covers the SSH configuration
-needed on both sides.
+subportal uses iroh (peer-to-peer QUIC) to connect desktop clients to
+server-side agents. This guide covers the enrollment process.
 
-## Basic setup
+## Prerequisites
 
-Add a `RemoteForward` directive to your SSH client config (`~/.ssh/config` on
-your desktop):
+- The agent (`subportal-agent`) must be running on the server
+- The client daemon (`subportald`) must be installed on your desktop
 
-```
-Host myserver
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
+## Enrollment steps
 
-The format is:
+### 1. Generate a ticket on the server
 
-```
-RemoteForward <remote-socket-path> <local-socket-path>
-```
-
-Both paths default to `$XDG_RUNTIME_DIR/subportal.sock`, which is typically
-`/run/user/<uid>/subportal.sock`.
-
-Replace `1000` with your actual UID. Run `id -u` to check.
-
-## Command-line usage
-
-Instead of editing `~/.ssh/config`, you can pass the forwarding on the command
-line:
+On the server (where the agent is running):
 
 ```sh
-ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
+subportal-agent ticket
 ```
 
-## Server-side sshd configuration
+This prints a JSON ticket to stdout. The ticket contains the agent's iroh
+endpoint address and a one-time token that expires after 10 minutes
+(configurable with `--ttl`).
 
-The remote server's `sshd_config` (usually `/etc/ssh/sshd_config`) must
-include:
+### 2. Pipe the ticket to the client
 
-```
-StreamLocalBindUnlink yes
-```
-
-This tells `sshd` to remove an existing socket file before binding a new one.
-Without it, if a previous SSH session was interrupted (network drop, crash,
-etc.), the stale socket remains and the new session fails with "address
-already in use."
-
-After changing `sshd_config`, reload the SSH daemon:
+The easiest way is to use SSH as a one-time transport for the ticket:
 
 ```sh
-sudo systemctl reload sshd
+ssh myserver subportal-agent ticket | subportald enroll
 ```
 
-The NixOS and system-manager subportal modules set this automatically.
+This generates the ticket on the server and feeds it directly to the client
+for enrollment. After this step, the client connects to the agent directly
+via iroh -- no SSH tunnel or port forwarding is needed.
 
-## Different UIDs on client and server
+### 3. Verify the connection
 
-If your UID differs between the desktop and the server (e.g., UID 1000 locally,
-UID 1001 on the server), adjust the remote path:
-
-```
-Host myserver
-    RemoteForward /run/user/1001/subportal.sock /run/user/1000/subportal.sock
-```
-
-With the NixOS/home-manager module, use the `remoteUid` option:
-
-```nix
-services.subportald.sshHosts."myserver" = { remoteUid = 1001; };
-```
-
-## Multiple servers
-
-Add a `RemoteForward` entry for each server:
-
-```
-Host server-a
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-
-Host server-b
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
-Each SSH connection forwards independently to the same local daemon.
-
-## Wildcard configuration
-
-To enable subportal for all SSH connections:
-
-```
-Host *
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
-This is convenient but means every SSH session attempts the forward, which
-produces a warning if the remote `$XDG_RUNTIME_DIR` does not exist or `sshd`
-does not allow it. Errors in socket forwarding do not prevent the SSH session
-from connecting.
-
-## Verifying the tunnel
-
-After connecting, run on the server:
+On the server, check that the client is connected:
 
 ```sh
-ls -la /run/user/1000/subportal.sock
+subportal-agent clients
 ```
 
-You should see a socket file. Then test with:
+You should see your desktop listed with its hostname, enrollment date, and
+capabilities.
+
+Then test with:
 
 ```sh
 subportal status
 ```
 
-If the socket exists but `subportal status` fails, the daemon may not be
-running on your desktop. See [troubleshooting](troubleshooting.md).
+## Multiple servers
 
-## OpenSSH version requirements
+Repeat the enrollment process for each server. The client daemon connects
+to all enrolled agents on startup.
 
-Unix-to-Unix socket forwarding requires OpenSSH 6.7 or later (released
-October 2014). Both the client and server must support it. Check with:
+## Revoking a client
+
+To remove an enrolled client from the server:
 
 ```sh
-ssh -V
+subportal-agent revoke <name-or-id>
 ```
+
+This removes the client from the persistent registry and disconnects it
+immediately if currently connected. The agent must be running.
+
+## Forgetting a server
+
+To remove an enrolled server from the client:
+
+```sh
+subportald forget <name-or-id>
+```
+
+The client will no longer connect to that server on subsequent runs.
+
+## Troubleshooting enrollment
+
+### "could not connect to running agent"
+
+The `subportal-agent ticket` and `subportal-agent revoke` commands require
+the agent to be running, since they communicate via Unix socket. Start the
+agent with:
+
+```sh
+subportal-agent run
+```
+
+### Token expired
+
+Tickets expire after 10 minutes by default. Generate a new one if needed,
+or use `--ttl` to increase the timeout:
+
+```sh
+subportal-agent ticket --ttl 3600
+```
+
+### Client cannot reach agent
+
+If the client enrolls but cannot connect, check:
+
+1. Both machines have internet connectivity
+2. No firewall is blocking QUIC (UDP) traffic
+3. If both are behind NAT, iroh's relay servers handle NAT traversal
+   automatically

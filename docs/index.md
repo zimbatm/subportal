@@ -14,8 +14,8 @@ Learning-oriented guides that walk you through a complete experience.
 
 Task-oriented instructions for specific goals.
 
-- [SSH setup](howto/ssh-setup.md) -- configure SSH reverse forwarding for
-  subportal
+- [Enrollment](howto/enrollment.md) -- enroll a desktop client with
+  a server agent
 - [NixOS / home-manager / system-manager setup](howto/nixos-setup.md) --
   declarative configuration with Nix modules
 - [Manual installation](howto/manual-install.md) -- build from source and

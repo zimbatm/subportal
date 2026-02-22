@@ -4,12 +4,12 @@
 > This file is the design specification for the subportal protocol and
 > components.
 
-xdg-desktop-portal, but the sandbox boundary is an SSH connection.
+xdg-desktop-portal, but the sandbox boundary is a network connection.
 
-`subportal` bridges a headless SSH server to the user's local desktop. Server-side
+`subportal` bridges a headless server to the user's local desktop. Server-side
 commands like `xdg-open` and `notify-send` transparently forward requests
-through an SSH tunnel to a client daemon, which handles them using the local
-desktop environment.
+via iroh (peer-to-peer QUIC) to a client daemon, which handles them using
+the local desktop environment.
 
 ## V1 Scope
 
@@ -25,29 +25,22 @@ large file chunked transfer.
 
 ## Transport
 
-Unix domain socket over SSH reverse socket forwarding. Default socket path:
+The agent listens on a Unix domain socket for local tools and on an iroh
+endpoint for desktop clients. Default socket path:
 `$XDG_RUNTIME_DIR/subportal.sock`.
 
-Client `~/.ssh/config`:
-
-```
-Host myserver
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
 Server-side commands connect to `$SUBPORTAL_SOCKET` (default
-`$XDG_RUNTIME_DIR/subportal.sock`). If nothing is listening,
+`$XDG_RUNTIME_DIR/subportal.sock`). If the agent is not running,
 subportal is unavailable.
 
-Server-side `sshd_config` must include `StreamLocalBindUnlink yes` so that
-stale sockets from disconnected sessions are cleaned up before binding new
-ones. The NixOS and system-manager modules set this automatically.
-
-Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
+Desktop clients connect to the agent via iroh (peer-to-peer QUIC). The
+connection is authenticated by endpoint ID (public key) and established
+automatically after enrollment.
 
 ## Protocol
 
-Varlink over Unix socket. Each connection is one method call.
+Varlink over Unix socket (local tools to agent) and Varlink over QUIC
+(agent to clients). Each connection is one method call.
 
 All methods accept an optional `host` parameter (string) that identifies the
 originating server's hostname. Server-side tools set this automatically via
@@ -76,6 +69,10 @@ method Notify(
     host: ?string
 ) -> ()
 
+method GenerateTicket(ttl: int) -> (ticket_json: string)
+
+method RevokeClient(name_or_id: string) -> ()
+
 ```
 
 Errors follow Varlink convention:
@@ -85,6 +82,7 @@ error io.subportal.UserDenied ()
 error io.subportal.NotSupported (capability: string)
 error io.subportal.FileTooLarge (max_bytes: int)
 error io.subportal.NoClient ()
+error io.subportal.NotFound (what: string)
 ```
 
 File content in `OpenFile` is base64-encoded. 5MB cap for v1.
@@ -116,10 +114,18 @@ subportal open <target>   # explicit open
 subportal notify ...      # explicit notify
 ```
 
+### Agent CLI
+
+```bash
+subportal-agent run             # start the agent (default)
+subportal-agent ticket [--ttl]  # generate enrollment ticket
+subportal-agent clients         # list enrolled clients
+subportal-agent revoke <id>     # revoke an enrolled client
+```
+
 ## Client Daemon -- `subportald`
 
-Runs on the user's desktop machine. Listens on
-`$XDG_RUNTIME_DIR/subportal.sock`.
+Runs on the user's desktop machine. Connects to enrolled agents via iroh.
 
 ### Peer Identity
 
@@ -127,9 +133,9 @@ Server-side tools include their hostname in every request via the `host`
 parameter (set automatically from `gethostname(2)`). The daemon uses this
 to annotate notifications (e.g. `subportal@myserver`) and for logging.
 
-`subportald` also uses `SO_PEERCRED` to obtain the UID of the connecting
-process and rejects connections from UIDs that don't match its own (except
-root), matching OpenSSH's access control behavior.
+The agent uses `SO_PEERCRED` to obtain the UID of the connecting
+process on the Unix socket and rejects connections from UIDs that don't
+match its own (except root).
 
 ### Request handling
 
@@ -151,6 +157,7 @@ pidfd-based caller identification that is unreliable for non-sandboxed apps.
 ### Lifecycle
 
 Started via systemd user unit or XDG autostart. Runs persistently.
+Connects to all enrolled agents on startup and reconnects automatically.
 
 ## Capability Handshake
 
@@ -166,12 +173,16 @@ capability, it gets `io.subportal.NotSupported` without a round-trip.
 
 ## Security Model
 
-- **Transport**: Encrypted by SSH. No additional encryption needed.
+- **Transport**: Encrypted by iroh (QUIC with TLS 1.3). Each endpoint is
+  authenticated by its public key.
 - **Access control**: Unix socket permissions restrict access to the owning
   user. Only the user who owns the socket can connect, unlike TCP localhost
   which is accessible by any local user.
+- **Enrollment**: Desktop clients must present a one-time token to be
+  enrolled. After enrollment, they are authenticated by endpoint ID.
 - **Server identity**: Server-side tools self-report their hostname via the
-  `host` request parameter. `SO_PEERCRED` provides UID-based access control.
+  `host` request parameter. `SO_PEERCRED` provides UID-based access control
+  on the Unix socket.
 - **OpenURI/OpenFile**: User confirmation required before opening.
 - **Notify**: No confirmation (passive, low risk).
 
@@ -187,12 +198,13 @@ auto_open_files = false   # still confirm
 
 ## Components
 
-| Component     | Runs on         | Language | Description                                          |
-| ------------- | --------------- | -------- | ---------------------------------------------------- |
-| `subportald`     | Client desktop  | Rust     | Daemon, listens on Unix socket, talks to xdg-desktop-portal and D-Bus  |
-| `xdg-open`    | Server          | Rust     | Drop-in replacement, connects to subportal              |
-| `notify-send` | Server          | Rust     | Drop-in replacement                                  |
-| `subportal`   | Server          | Rust     | Explicit CLI for all capabilities + status             |
+| Component        | Runs on         | Language | Description                                          |
+| ---------------- | --------------- | -------- | ---------------------------------------------------- |
+| `subportal-agent`| Server          | Rust     | Agent daemon, Unix socket + iroh, routes requests    |
+| `subportald`     | Client desktop  | Rust     | Client daemon, iroh + xdg-desktop-portal + D-Bus    |
+| `xdg-open`       | Server          | Rust     | Drop-in replacement, connects to agent               |
+| `notify-send`    | Server          | Rust     | Drop-in replacement                                  |
+| `subportal`      | Server          | Rust     | Explicit CLI for all capabilities + status            |
 
 ## NixOS / home-manager / system-manager
 
@@ -203,7 +215,7 @@ The flake exports packages and modules for all three systems.
 | Flake output | Contents |
 | --- | --- |
 | `packages.<system>.subportald` | Client daemon binary |
-| `packages.<system>.subportal` | Server-side CLI tools (`subportal`, `xdg-open`, `notify-send`) |
+| `packages.<system>.subportal` | Server-side CLI tools (`subportal`, `subportal-agent`, `xdg-open`, `notify-send`) |
 
 ### Modules
 
@@ -225,8 +237,6 @@ NixOS:
 {
   imports = [ inputs.subportal.nixosModules.subportald ];
   services.subportald.enable = true;
-  # services.subportald.sshHosts."myserver" = {};              # auto-configure RemoteForward
-  # services.subportald.sshHosts."other" = { remoteUid = 1001; };  # different UID on remote
 }
 ```
 
@@ -237,11 +247,10 @@ home-manager:
 {
   imports = [ inputs.subportal.homeModules.subportald ];
   services.subportald.enable = true;
-  # services.subportald.sshHosts."myserver" = {};              # auto-configure RemoteForward
 }
 ```
 
-### Server setup (remote SSH host)
+### Server setup (remote host)
 
 NixOS:
 
@@ -250,6 +259,7 @@ NixOS:
 {
   imports = [ inputs.subportal.nixosModules.subportal ];
   programs.subportal.enable = true;
+  programs.subportal.agent.enable = true;
   # programs.subportal.xdg-open = true;     # install xdg-open drop-in
   # programs.subportal.notify-send = true;   # install notify-send drop-in
 }
@@ -275,4 +285,4 @@ to disable them.
 - Clipboard forwarding
 - FileChooser (client -> server file picker)
 - Chunked file transfer (large files)
-- Multiple server connections (subportald manages several tunnels)
+- Multiple agent connections (subportald manages several agents)

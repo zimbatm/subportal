@@ -4,14 +4,15 @@ Did you ever try to go through the oauth flow on your server and had to
 copy-paste the URL back into your local browser? Or wanted to open a file back
 in your local $EDITOR for a quick peek? Now you can.
 
-`subportal` bridges a headless SSH server to your local desktop. Server-side
+`subportal` bridges a headless server to your local desktop. Server-side
 commands like `xdg-open` and `notify-send` transparently forward requests
-through an SSH tunnel to a client daemon, which handles them using the local
-desktop environment.
+via iroh (peer-to-peer QUIC) to a client daemon, which handles them using
+the local desktop environment.
 
 Open a URL on a remote server and it appears in your local browser. Send a
-notification and it pops up on your desktop. All through your existing SSH
-connection.
+notification and it pops up on your desktop. No SSH tunnels or port
+forwarding required -- just enroll your desktop once and it connects
+automatically.
 
 ## How it works
 
@@ -23,9 +24,10 @@ notify-send "Build done"      ─(unix)─>  -> desktop notification
 subportal open ./report.pdf   ─(sock)─>  -> opens in PDF viewer
 ```
 
-The server-side tools connect to a Unix domain socket
-(`$XDG_RUNTIME_DIR/subportal.sock`), which SSH reverse-forwards to
-the client daemon (`subportald`). The daemon uses
+The server-side tools connect to the `subportal-agent` via a Unix domain
+socket (`$XDG_RUNTIME_DIR/subportal.sock`). The agent routes requests to
+enrolled desktop clients over [iroh](https://iroh.computer/) (peer-to-peer
+QUIC). The client daemon (`subportald`) uses
 [xdg-desktop-portal](https://flatpak.github.io/xdg-desktop-portal/) D-Bus
 APIs to show native dialogs and notifications on whatever desktop environment
 you run (GNOME, KDE, Sway, ...).
@@ -42,7 +44,7 @@ The [documentation](docs/index.md) is organized using the
 
 - **[Tutorials](docs/tutorials/getting-started.md)** -- learn by doing
 - **How-to guides** -- solve specific problems
-  - [SSH setup](docs/howto/ssh-setup.md)
+  - [Enrollment](docs/howto/enrollment.md)
   - [NixOS / home-manager setup](docs/howto/nixos-setup.md)
   - [Manual installation](docs/howto/manual-install.md)
   - [Troubleshooting](docs/howto/troubleshooting.md)

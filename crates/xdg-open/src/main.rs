@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use subportal_lib::client::Client;
 use subportal_lib::consts::MAX_FILE_SIZE;
 use subportal_lib::protocol::{Request, SubportalError};
@@ -17,7 +17,12 @@ fn is_url(target: &str) -> bool {
     // Match scheme://... patterns (http://, https://, ftp://, etc.)
     target
         .find("://")
-        .map(|pos| pos > 0 && target[..pos].chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.'))
+        .map(|pos| {
+            pos > 0
+                && target[..pos]
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+        })
         .unwrap_or(false)
 }
 
@@ -27,15 +32,15 @@ async fn main() -> ExitCode {
 
     if args.is_empty() || args[0] == "--help" {
         eprintln!(
-            "xdg-open (subportal {}) - forwards to your desktop via SSH",
+            "xdg-open (subportal {}) - forwards to your desktop via subportal",
             subportal_lib::consts::VERSION,
         );
         eprintln!();
         eprintln!("Usage: xdg-open {{file | URL}}");
         eprintln!("       xdg-open {{--help | --version}}");
         eprintln!();
-        eprintln!("Opens a file or URL on the client desktop via the subportal");
-        eprintln!("SSH tunnel. Files up to 5 MB are transferred and opened in");
+        eprintln!("Opens a file or URL on the client desktop via subportal.");
+        eprintln!("Files up to 5 MB are transferred and opened in");
         eprintln!("the client's preferred application. URLs are opened in the");
         eprintln!("client's browser. Both require user confirmation.");
         return if args.is_empty() {

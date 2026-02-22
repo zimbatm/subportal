@@ -1,5 +1,5 @@
 {
-  description = "subportal - xdg-desktop-portal over SSH";
+  description = "subportal - xdg-desktop-portal over the network";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";

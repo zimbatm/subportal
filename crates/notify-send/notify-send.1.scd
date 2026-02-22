@@ -12,9 +12,10 @@ notify-send [_OPTIONS_] _TITLE_ [_BODY_]
 
 This is the subportal drop-in replacement for notify-send(1). When placed
 earlier in *$PATH* than the real notify-send, it transparently forwards
-notifications through an SSH tunnel to the subportal client daemon
-(*subportald*), which displays them on the local desktop via the standard
-_org.freedesktop.Notifications_ D-Bus interface.
+notifications to a running *subportal-agent*(1), which routes them via iroh
+(peer-to-peer QUIC) to enrolled desktop clients running *subportald*(1).
+Notifications are displayed via the standard _org.freedesktop.Notifications_
+D-Bus interface.
 
 Notifications are delivered without user confirmation (passive, low risk).
 
@@ -73,25 +74,10 @@ does not support these features.
 
 # TRANSPORT
 
-The connection to the daemon goes through an SSH reverse tunnel using Unix
-socket forwarding. Configure it in *~/.ssh/config*:
-
-```
-Host myserver
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
-Or on the command line:
-
-```
-ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
-```
-
-The server's _sshd_config_ must include *StreamLocalBindUnlink yes* so that
-stale sockets from disconnected sessions are cleaned up before binding new
-ones.
-
-Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
+Server-side tools connect to the *subportal-agent*(1) via a Unix domain
+socket at _$XDG_RUNTIME_DIR/subportal.sock_. The agent forwards requests to
+enrolled desktop clients over iroh (peer-to-peer QUIC). No SSH tunnel or
+port forwarding is required.
 
 # SEE ALSO
 

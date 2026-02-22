@@ -14,8 +14,9 @@ xdg-open {*--help* | *--version*}
 
 This is the subportal drop-in replacement for xdg-open(1). When placed
 earlier in *$PATH* than the real xdg-open, it transparently forwards open
-requests through an SSH tunnel to the subportal client daemon (*subportald*),
-which opens them on the local desktop using xdg-desktop-portal.
+requests to a running *subportal-agent*(1), which routes them via iroh
+(peer-to-peer QUIC) to the client daemon (*subportald*). The client opens
+them on the local desktop using xdg-desktop-portal.
 
 If the target is a URL (contains a _scheme://_), it is sent as an *OpenURI*
 request. The client shows a confirmation dialog before opening the URL in the
@@ -61,25 +62,10 @@ Exit codes follow the xdg-open convention:
 
 # TRANSPORT
 
-The connection to the daemon goes through an SSH reverse tunnel using Unix
-socket forwarding. Configure it in *~/.ssh/config*:
-
-```
-Host myserver
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
-Or on the command line:
-
-```
-ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
-```
-
-The server's _sshd_config_ must include *StreamLocalBindUnlink yes* so that
-stale sockets from disconnected sessions are cleaned up before binding new
-ones.
-
-Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
+Server-side tools connect to the *subportal-agent*(1) via a Unix domain
+socket at _$XDG_RUNTIME_DIR/subportal.sock_. The agent forwards requests to
+enrolled desktop clients over iroh (peer-to-peer QUIC). No SSH tunnel or
+port forwarding is required.
 
 # SEE ALSO
 

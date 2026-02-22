@@ -97,10 +97,11 @@ Edit `Exec=` to point to your binary location.
 
 ## Installing server-side tools (remote server)
 
-Copy the three server-side binaries:
+Copy the four server-side binaries:
 
 ```sh
 scp target/release/subportal myserver:~/.local/bin/
+scp target/release/subportal-agent myserver:~/.local/bin/
 scp target/release/xdg-open myserver:~/.local/bin/
 scp target/release/notify-send myserver:~/.local/bin/
 ```

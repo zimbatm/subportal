@@ -44,35 +44,6 @@ Unix socket path for subportald to listen on.
   expands to `$XDG_RUNTIME_DIR/subportal.sock`)
 - **Default (system-manager):** `/run/subportal.sock`
 
-### services.subportald.sshHosts
-
-*NixOS and home-manager only.* SSH host patterns to configure
-`RemoteForward` for subportal. Each key is a `Host` pattern used in
-`~/.ssh/config`.
-
-- **Type:** attribute set of submodules
-- **Default:** `{}`
-
-Each host submodule has one option:
-
-#### services.subportald.sshHosts.\<name\>.remoteUid
-
-UID of the remote user. Used to construct the remote socket path
-(`/run/user/<uid>/subportal.sock`). When `null`, uses SSH's `%i` token which
-expands to the local UID.
-
-- **Type:** null or int
-- **Default:** `null`
-
-**Example:**
-
-```nix
-services.subportald.sshHosts = {
-  "myserver" = {};                       # same UID on both sides
-  "other-server" = { remoteUid = 1001; }; # different UID on server
-};
-```
-
 ### services.subportald.user
 
 *system-manager only.* User account to run subportald as.
@@ -113,18 +84,6 @@ Whether to install the `notify-send` drop-in replacement.
 - **Default:** `true`
 
 ## Side effects
-
-### NixOS subportal module
-
-When `programs.subportal.enable = true`, the NixOS module also sets
-`StreamLocalBindUnlink yes` in `sshd_config` so that stale sockets are
-cleaned up on SSH reconnection.
-
-### NixOS/home-manager subportald module
-
-When `services.subportald.sshHosts` is non-empty, the module writes
-`RemoteForward` entries into the SSH client configuration
-(`programs.ssh.extraConfig`).
 
 ### Systemd service
 

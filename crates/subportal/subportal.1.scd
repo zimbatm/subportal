@@ -19,14 +19,14 @@ drop-in replacements (*xdg-open*, *notify-send*), this binary is invoked
 explicitly and provides richer output such as latency and capability
 reporting.
 
-All commands connect to the subportal client daemon (*subportald*) through an
-SSH reverse tunnel via a Unix domain socket.
+All commands connect to the subportal agent (*subportal-agent*) through a
+Unix domain socket.
 
 # COMMANDS
 
 *status*
-	Ping the daemon and display its version, round-trip latency, and
-	supported capabilities. Exits with code 1 if the daemon is not
+	Ping the agent and display its version, round-trip latency, and
+	supported capabilities. Exits with code 1 if the agent is not
 	reachable.
 
 *open* _TARGET_
@@ -51,37 +51,15 @@ SSH reverse tunnel via a Unix domain socket.
 # ENVIRONMENT
 
 *SUBPORTAL_SOCKET*
-	Override the Unix socket path used to connect to the daemon. Default:
+	Override the Unix socket path used to connect to the agent. Default:
 	_$XDG_RUNTIME_DIR/subportal.sock_.
 
 *RUST_LOG*
 	Control log verbosity (e.g. _RUST_LOG=debug_).
 
-# TRANSPORT
-
-The connection to the daemon goes through an SSH reverse tunnel using Unix
-socket forwarding. Configure it in *~/.ssh/config*:
-
-```
-Host myserver
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
-Or on the command line:
-
-```
-ssh -R /run/user/1000/subportal.sock:/run/user/1000/subportal.sock myserver
-```
-
-The server's _sshd_config_ must include *StreamLocalBindUnlink yes* so that
-stale sockets from disconnected sessions are cleaned up before binding new
-ones.
-
-Unix-to-Unix socket forwarding requires OpenSSH 6.7+ (released 2014).
-
 # SEE ALSO
 
-*xdg-open*(1), *notify-send*(1), *subportald*(1)
+*subportal-agent*(1), *subportald*(1), *xdg-open*(1), *notify-send*(1)
 
 # AUTHORS
 

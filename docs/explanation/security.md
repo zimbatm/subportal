@@ -15,20 +15,20 @@ are:
 
 ## Transport encryption
 
-All traffic between the server-side tools and the client daemon travels
-through the SSH tunnel. The Unix socket on each end is a local-only
-resource. No additional encryption is needed because:
+All traffic between the agent and client daemon travels over iroh, which
+uses QUIC with TLS 1.3. Each endpoint has a persistent keypair, and
+connections are authenticated by endpoint ID (public key). No additional
+encryption is needed.
 
-- The SSH connection provides confidentiality and integrity
-- The Unix sockets on each end are not network-accessible
-- There is no point-to-point communication outside of SSH
+On the server side, communication between CLI tools and the agent uses a
+local Unix domain socket, which is not network-accessible.
 
 ## Access control
 
 ### Unix socket permissions
 
-The subportal socket is a Unix domain socket, which has inherently stronger
-access control than TCP localhost:
+The agent's Unix socket is a Unix domain socket, which has inherently
+stronger access control than TCP localhost:
 
 - **Unix socket**: only accessible by the file owner (restricted by
   filesystem permissions and umask)
@@ -40,19 +40,26 @@ escalation in local-service architectures. Unix sockets avoid this entirely.
 
 ### SO_PEERCRED validation
 
-When a client connects to `subportald`, the daemon calls `getsockopt` with
-`SO_PEERCRED` to obtain the peer's UID and PID. It then:
+When a process connects to the agent's Unix socket, the agent calls
+`getsockopt` with `SO_PEERCRED` to obtain the peer's UID and PID. It then:
 
-- **Rejects** connections from UIDs that do not match the daemon's own UID
+- **Rejects** connections from UIDs that do not match the agent's own UID
 - **Allows** connections from root (UID 0), since root can access any
   socket anyway and systemd services may run as root
 
-This prevents a scenario where a multi-user server has user A's SSH session
-forwarding to user B's daemon. Even if user A could somehow access user B's
-socket file, `SO_PEERCRED` would reject the connection.
+### Enrollment-based client authentication
 
-In the SSH forwarding case, `SO_PEERCRED` reports the UID of the `sshd`
-child process handling the connection, which runs as the authenticated user.
+Desktop clients must be enrolled with the agent before they can receive
+requests. Enrollment uses a one-time token:
+
+1. The agent generates a time-limited token
+2. The token is transferred out-of-band (e.g. piped over SSH)
+3. The client presents the token on first connection
+4. After enrollment, the client's iroh endpoint ID (public key) is stored
+   in the agent's persistent registry
+5. On reconnection, the client is authenticated by its endpoint ID
+
+Only enrolled clients can connect. Unknown endpoint IDs are rejected.
 
 ## User confirmation
 
@@ -89,33 +96,23 @@ and uses it for logging.
 This hostname is **self-reported and not cryptographically verified**. A
 compromised server could report any hostname. However:
 
-- The SSH tunnel itself authenticates the server (via host keys)
-- The user configured the `RemoteForward` to a specific server
+- The iroh connection authenticates the agent by its endpoint ID
+- The user explicitly enrolled with a specific agent
 - The hostname is informational, not used for access control decisions
-- In practice, the user knows which server they SSH'd into
-
-## Socket cleanup
-
-Stale sockets from crashed or disconnected SSH sessions must be cleaned up.
-The `StreamLocalBindUnlink yes` setting in `sshd_config` tells the SSH
-daemon to remove existing socket files before binding new ones.
-
-Without this setting, a reconnection attempt will fail because the stale
-socket still exists. This is not a security issue per se, but it is a
-reliability concern that can prevent legitimate use.
+- In practice, the user knows which server they enrolled
 
 ## Trust boundaries
 
 ```
 Untrusted                          Trusted
-(server)          SSH tunnel       (desktop)
-┌──────────────┐  ═══════════  ┌──────────────┐
-│ xdg-open     │               │ subportald   │
-│ notify-send  │ ──────────>   │   │          │
-│ subportal    │               │   v          │
-│              │               │ confirmation │
-│ other tools  │               │ dialog       │
-└──────────────┘               └──────────────┘
+(server)          iroh QUIC        (desktop)
++--------------+  ===========  +--------------+
+| xdg-open     |               | subportald   |
+| notify-send  | ---------->   |   |          |
+| subportal    |               |   v          |
+|              |               | confirmation |
+| other tools  |               | dialog       |
++--------------+               +--------------+
 ```
 
 The trust boundary is at the daemon. Everything coming from the server is

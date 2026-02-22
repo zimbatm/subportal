@@ -1,21 +1,20 @@
 # Getting started with subportal
 
 This tutorial walks you through setting up subportal so that commands like
-`xdg-open` and `notify-send` on a remote SSH server transparently work on
+`xdg-open` and `notify-send` on a remote server transparently work on
 your local desktop.
 
 By the end, you will have:
 
 - A running `subportald` daemon on your desktop
-- SSH configured to forward the subportal socket
-- Server-side tools installed on your remote machine
+- A running `subportal-agent` on your server
+- Your desktop enrolled with the agent
 - Verified the connection with `subportal status`
 
 ## What you need
 
 - A Linux desktop with xdg-desktop-portal (GNOME, KDE, Sway, Hyprland, ...)
-- A remote Linux server you connect to via SSH
-- OpenSSH 6.7+ on both machines (for Unix socket forwarding)
+- A remote Linux server
 
 ## Step 1: Install the client daemon
 
@@ -68,44 +67,12 @@ Start it:
 subportald &
 ```
 
-The daemon listens on `$XDG_RUNTIME_DIR/subportal.sock` (typically
-`/run/user/1000/subportal.sock`).
+## Step 2: Install server-side tools
 
-## Step 2: Configure SSH
-
-SSH needs to reverse-forward the subportal socket from the remote server back
-to your desktop. Add this to `~/.ssh/config` on your desktop machine:
-
-```
-Host myserver
-    RemoteForward /run/user/1000/subportal.sock /run/user/1000/subportal.sock
-```
-
-Replace `myserver` with your SSH host alias and `1000` with your UID (run
-`id -u` to check).
-
-> **Tip:** If you use the NixOS or home-manager module, you can configure this
-> declaratively instead:
->
-> ```nix
-> services.subportald.sshHosts."myserver" = {};
-> ```
-
-The remote server's `sshd_config` must include:
-
-```
-StreamLocalBindUnlink yes
-```
-
-This lets SSH clean up stale sockets from previous sessions. Without it,
-reconnecting will fail with "address already in use." NixOS and system-manager
-modules set this automatically.
-
-## Step 3: Install server-side tools
-
-On the remote server, install the server-side package. This provides three
-binaries: `subportal` (the explicit CLI), `xdg-open` (drop-in replacement),
-and `notify-send` (drop-in replacement).
+On the remote server, install the server-side package. This provides four
+binaries: `subportal-agent` (the agent daemon), `subportal` (the explicit
+CLI), `xdg-open` (drop-in replacement), and `notify-send` (drop-in
+replacement).
 
 ### With Nix flakes
 
@@ -115,6 +82,7 @@ and `notify-send` (drop-in replacement).
 {
   imports = [ inputs.subportal.nixosModules.subportal ];
   programs.subportal.enable = true;
+  programs.subportal.agent.enable = true;
 }
 ```
 
@@ -133,7 +101,7 @@ Or with home-manager:
 Build the server-side tools:
 
 ```sh
-cargo build --release -p subportal -p xdg-open -p notify-send
+cargo build --release -p subportal -p subportal-agent -p xdg-open -p notify-send
 ```
 
 Install them somewhere in your `$PATH`, making sure the drop-in replacements
@@ -141,17 +109,34 @@ appear *before* the system `xdg-open` and `notify-send`:
 
 ```sh
 cp target/release/subportal ~/.local/bin/
+cp target/release/subportal-agent ~/.local/bin/
 cp target/release/xdg-open ~/.local/bin/
 cp target/release/notify-send ~/.local/bin/
 ```
 
-## Step 4: Test the connection
-
-SSH into your server (this activates the socket forwarding):
+Start the agent:
 
 ```sh
-ssh myserver
+subportal-agent run &
 ```
+
+## Step 3: Enroll your desktop
+
+The easiest way to enroll is to pipe a ticket from the server to the client
+using SSH as a one-time transport:
+
+```sh
+ssh myserver subportal-agent ticket | subportald enroll
+```
+
+This generates an enrollment ticket on the server and feeds it to the client.
+After enrollment, the client connects directly to the agent via iroh
+(peer-to-peer QUIC) -- no ongoing SSH tunnel is needed.
+
+> **Tip:** If you use the NixOS or home-manager module, the agent runs as a
+> systemd service. You can generate tickets from any session on the server.
+
+## Step 4: Test the connection
 
 On the server, check connectivity:
 
@@ -167,7 +152,7 @@ latency: 12.3ms
 capabilities: OpenURI, OpenFile, Notify
 ```
 
-If this works, the tunnel is up and the daemon is reachable.
+If this works, the agent is reachable and your desktop client is connected.
 
 ## Step 5: Try it out
 
@@ -200,8 +185,8 @@ default text editor after you confirm.
 
 ## What's next
 
-- [SSH setup](../howto/ssh-setup.md) -- advanced SSH configuration (different
-  UIDs, multiple servers, command-line usage)
+- [Enrollment](../howto/enrollment.md) -- manage enrolled clients, revoke
+  access, enroll additional servers
 - [Troubleshooting](../howto/troubleshooting.md) -- what to do when things
   go wrong
 - [Architecture](../explanation/architecture.md) -- understand how the

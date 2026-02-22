@@ -2,35 +2,40 @@
 
 ## Overview
 
-subportal bridges a headless SSH server to the user's local desktop. The core
+subportal bridges a headless server to the user's local desktop. The core
 idea is borrowed from xdg-desktop-portal: applications talk to a daemon over
 a Unix socket, and the daemon handles the interaction with the desktop
-environment. The difference is that the sandbox boundary is an SSH connection
-instead of a Flatpak/container sandbox.
+environment. The difference is that the boundary is a network connection
+(via iroh, peer-to-peer QUIC) instead of a Flatpak/container sandbox.
 
 ```
 Server (headless)                         Client (desktop)
-                                          ┌─────────────┐
-┌────────────┐                            │  subportald  │
-│  xdg-open  │──┐                         │              │
-├────────────┤  │  ┌──────────────────┐   │  ┌────────┐  │
-│ notify-send│──┼──│ subportal.sock   │───│──│ portal  │  │
-├────────────┤  │  │  (Unix socket)   │   │  │ D-Bus   │  │
-│  subportal │──┘  └──────────────────┘   │  └────────┘  │
-└────────────┘     forwarded by SSH       └─────────────┘
+                                          +--------------+
++-------------+                           |  subportald  |
+|  xdg-open   |--+                        |              |
++-------------+  |  +------------------+  |  +--------+  |
+| notify-send |--+--| subportal-agent  |====|  portal  |  |
++-------------+  |  |  (Unix socket    |  |  |  D-Bus  |  |
+|  subportal  |--+  |   + iroh QUIC)   |  |  +--------+  |
++-------------+     +------------------+  +--------------+
 ```
 
 ## Components
 
-The project has five crates, split into two installable packages:
+The project has six crates, split into three installable packages:
 
 ### subportal (server-side package)
 
-Contains three binaries, all installed on the remote SSH host:
+Contains four binaries, all installed on the remote server:
 
 - **subportal** -- explicit CLI with `status`, `open`, and `notify`
   subcommands. Used when you want explicit control or diagnostic output
   (latency, capabilities).
+
+- **subportal-agent** -- the agent daemon that bridges local tools to
+  remote desktop clients. Listens on a Unix socket for local requests and
+  on an iroh endpoint for client connections. Handles enrollment, routing,
+  and client management.
 
 - **xdg-open** -- drop-in replacement for the standard `xdg-open`. Placed
   earlier in `$PATH` so that existing tools and scripts work transparently.
@@ -39,17 +44,16 @@ Contains three binaries, all installed on the remote SSH host:
   Same `$PATH` shadowing strategy. Parses the standard flags for
   compatibility.
 
-All three use the shared library to connect to the daemon.
+All CLI tools use the shared library to connect to the agent.
 
 ### subportald (client-side package)
 
 A single daemon binary that runs on the user's desktop machine. It:
 
-1. Binds to a Unix domain socket
-2. Accepts one connection at a time (though connections are handled
-   concurrently via tokio tasks)
-3. Validates the peer UID via `SO_PEERCRED`
-4. Dispatches requests to the appropriate desktop interface
+1. Connects to enrolled agents via iroh (peer-to-peer QUIC)
+2. Accepts requests forwarded by the agent
+3. Dispatches requests to the appropriate desktop interface
+4. Reports focus state (active/idle) back to the agent
 
 ### subportal-lib (shared library)
 
@@ -70,6 +74,17 @@ Not distributed as a separate package. Contains:
 
 - **consts** -- Protocol version, size limits, socket path defaults.
 
+### subportal-iroh (shared library)
+
+Not distributed as a separate package. Contains iroh-specific code shared
+between the agent and client daemon:
+
+- **transport** -- Varlink-over-QUIC request/response I/O
+- **control** -- Control channel messages (focus updates, dismiss notifications)
+- **peers** -- Client and server registries (persistent enrollment data)
+- **keypair** -- iroh keypair generation and loading
+- **ticket** -- Enrollment ticket serialization
+
 ## Data flow
 
 A typical request follows this path:
@@ -80,11 +95,10 @@ A typical request follows this path:
 2. The **client library** connects to the Unix socket at the configured path,
    serializes the request as NUL-delimited JSON, and sends it.
 
-3. The socket is actually an **SSH reverse forward**. SSH transports the
-   bytes over the encrypted SSH connection to the desktop machine.
+3. The **subportal-agent** receives the request, determines which connected
+   client(s) should handle it (routing), and forwards it over iroh QUIC.
 
-4. **subportald** accepts the connection, reads the request, and validates
-   the peer UID.
+4. **subportald** receives the request on its iroh connection and validates it.
 
 5. The **handler** dispatches the request to the appropriate **portal**
    function.
@@ -99,13 +113,36 @@ A typical request follows this path:
 
 ## Connection model
 
-subportal uses a one-shot connection model: each request opens a new Unix
-socket connection, sends one request, receives one response, and closes the
-connection. This is simple and avoids state management, connection pooling,
-or multiplexing.
+Server-side CLI tools use a one-shot connection model: each request opens a
+new Unix socket connection, sends one request, receives one response, and
+closes the connection.
 
-The overhead is minimal because Unix sockets are local (or tunneled through
-an already-established SSH connection).
+The agent maintains persistent iroh connections to all enrolled desktop
+clients. Requests received on the Unix socket are routed to the appropriate
+client(s) over these persistent connections.
+
+## Routing
+
+The agent uses different routing strategies depending on the request type:
+
+- **PickBest** (OpenURI, OpenFile) -- sent to the single best client
+  (prefers active over idle focus state)
+- **FanOut** (Notify) -- sent to all connected clients with the capability
+- **Direct** (Ping, GenerateTicket, RevokeClient) -- handled by the agent
+  itself without forwarding to clients
+
+## Enrollment
+
+Desktop clients are enrolled with the agent using one-time tickets:
+
+1. The agent generates a ticket containing its iroh endpoint address and a
+   one-time token
+2. The ticket is transferred to the desktop (e.g. via `ssh myserver
+   subportal-agent ticket | subportald enroll`)
+3. The desktop client connects to the agent, presents the token, and is
+   enrolled in the persistent registry
+4. On subsequent starts, the client reconnects automatically using the
+   stored endpoint address
 
 ## Desktop integration
 

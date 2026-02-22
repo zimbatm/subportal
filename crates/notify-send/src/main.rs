@@ -12,7 +12,7 @@ use subportal_lib::protocol::{Request, SubportalError};
 
 fn print_usage() {
     eprintln!(
-        "notify-send (subportal {}) - forwards to your desktop via SSH",
+        "notify-send (subportal {}) - forwards to your desktop via subportal",
         subportal_lib::consts::VERSION,
     );
     eprintln!();
@@ -64,8 +64,8 @@ fn parse_args() -> Option<Args> {
                 icon = args.get(i).cloned();
             }
             // Flags that take an argument: accept but ignore
-            "-t" | "--expire-time" | "-a" | "--app-name" | "-c" | "--category"
-            | "-A" | "--action" | "-r" | "--replace-id" | "--hint" => {
+            "-t" | "--expire-time" | "-a" | "--app-name" | "-c" | "--category" | "-A"
+            | "--action" | "-r" | "--replace-id" | "--hint" => {
                 i += 1;
             }
             // Flags that are standalone: accept but ignore

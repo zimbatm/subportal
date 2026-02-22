@@ -3,7 +3,7 @@
 subportal provides NixOS, home-manager, and system-manager modules for
 declarative configuration. There are two modules to configure: one for
 the client daemon (your desktop) and one for the server-side tools (the
-remote SSH host).
+remote server).
 
 ## Adding the flake input
 
@@ -18,7 +18,7 @@ Add subportal to your flake inputs:
 ## Client setup (desktop machine)
 
 The client daemon (`subportald`) runs on your desktop and handles incoming
-requests from remote servers.
+requests from remote agents.
 
 ### NixOS
 
@@ -27,18 +27,11 @@ requests from remote servers.
 {
   imports = [ inputs.subportal.nixosModules.subportald ];
 
-  services.subportald = {
-    enable = true;
-
-    # Auto-configure SSH RemoteForward entries:
-    sshHosts."myserver" = {};
-    # sshHosts."other-server" = { remoteUid = 1001; };
-  };
+  services.subportald.enable = true;
 }
 ```
 
-This creates a systemd user service that starts with your graphical session
-and writes matching `RemoteForward` entries into your SSH config.
+This creates a systemd user service that starts with your graphical session.
 
 ### home-manager
 
@@ -47,10 +40,7 @@ and writes matching `RemoteForward` entries into your SSH config.
 {
   imports = [ inputs.subportal.homeModules.subportald ];
 
-  services.subportald = {
-    enable = true;
-    sshHosts."myserver" = {};
-  };
+  services.subportald.enable = true;
 }
 ```
 
@@ -72,9 +62,10 @@ requires specifying the user:
 }
 ```
 
-## Server setup (remote SSH host)
+## Server setup (remote host)
 
-The server-side package provides `subportal`, `xdg-open`, and `notify-send`.
+The server-side package provides `subportal`, `subportal-agent`, `xdg-open`,
+and `notify-send`.
 
 ### NixOS
 
@@ -85,14 +76,12 @@ The server-side package provides `subportal`, `xdg-open`, and `notify-send`.
 
   programs.subportal = {
     enable = true;
+    agent.enable = true;  # start the agent as a systemd user service
     # xdg-open = true;      # install drop-in (default: true)
     # notify-send = true;    # install drop-in (default: true)
   };
 }
 ```
-
-The NixOS module also sets `StreamLocalBindUnlink yes` in `sshd_config`
-automatically.
 
 ### home-manager
 
@@ -109,10 +98,6 @@ automatically.
 }
 ```
 
-Note: the home-manager module cannot configure `sshd_config`. You must set
-`StreamLocalBindUnlink yes` manually on the server. See
-[SSH setup](ssh-setup.md).
-
 ### system-manager
 
 ```nix
@@ -125,6 +110,16 @@ Note: the home-manager module cannot configure `sshd_config`. You must set
   };
 }
 ```
+
+## Enrollment
+
+After both the client and server are running, enroll the desktop client:
+
+```sh
+ssh myserver subportal-agent ticket | subportald enroll
+```
+
+See [enrollment](enrollment.md) for full details.
 
 ## Disabling drop-in replacements
 

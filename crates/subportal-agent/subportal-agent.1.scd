@@ -36,14 +36,18 @@ socket are routed to connected desktop clients.
 	The ticket contains the agent's iroh endpoint address and a token
 	that expires after _SECS_ seconds (default: 600, i.e. 10 minutes).
 	Pipe this to *subportald enroll* on the desktop machine to enroll.
+	The agent must be running for this command to work (it connects via
+	Unix socket).
 
 *clients*
 	List all enrolled client devices with their name, endpoint ID,
 	enrollment date, last seen time, and capabilities.
 
 *revoke* _NAME-OR-ID_
-	Remove an enrolled client by name or endpoint ID. The client will
-	no longer be allowed to reconnect.
+	Remove an enrolled client by name or endpoint ID. The client is
+	removed from the persistent registry and, if currently connected,
+	is disconnected immediately. The agent must be running for this
+	command to work (it connects via Unix socket).
 
 # ENROLLMENT
 

@@ -5,7 +5,7 @@ This guide covers common problems and how to diagnose them.
 ## Quick diagnosis
 
 Run `subportal status` on the remote server. It checks the full path from
-server-side tool through the SSH tunnel to the client daemon.
+server-side tool through the agent to the client daemon.
 
 ```sh
 subportal status
@@ -29,71 +29,58 @@ capabilities: OpenURI, OpenFile, Notify
 ls -la $XDG_RUNTIME_DIR/subportal.sock
 ```
 
-If the file is missing, the SSH tunnel is not active.
+If the file is missing, the agent is not running.
 
 Causes:
 
-1. You did not SSH with `RemoteForward` configured. Check your
-   `~/.ssh/config` or add `-R` to the ssh command. See
-   [SSH setup](ssh-setup.md).
-2. You connected before the daemon was running. SSH creates the remote socket
-   at connection time. Disconnect and reconnect after starting `subportald`.
-3. The remote `$XDG_RUNTIME_DIR` does not exist. Verify with `echo
+1. The agent (`subportal-agent`) is not running. Start it with:
+   ```sh
+   subportal-agent run
+   ```
+   Or enable the systemd service.
+2. The `$XDG_RUNTIME_DIR` does not exist. Verify with `echo
    $XDG_RUNTIME_DIR` on the server. It is typically `/run/user/<uid>` and
    requires an active login session (e.g., via `loginctl enable-linger`).
 
 **The socket file exists but nothing responds:**
 
-The daemon may not be running on your desktop.
+The agent may have crashed. Check its logs:
 
 ```sh
-# On your desktop:
-systemctl --user status subportald
+journalctl --user -u subportal-agent -f
 ```
 
-Or check if the process is running:
+Or if running manually, check the terminal output.
+
+## No clients connected
+
+**Symptom:** `subportal status` reports "no client daemon reachable".
 
 ```sh
-pgrep subportald
+subportal-agent clients
 ```
 
-## "Address already in use"
+If no clients are listed, you need to enroll a desktop client. See
+[enrollment](enrollment.md).
 
-**Symptom:** SSH logs `Warning: remote port forwarding failed for listen path`
-when connecting.
+If clients are listed but disconnected, check:
 
-A stale socket from a previous session was not cleaned up.
-
-**Fix:** Ensure the server's `sshd_config` includes:
-
-```
-StreamLocalBindUnlink yes
-```
-
-Then reload sshd:
-
-```sh
-sudo systemctl reload sshd
-```
-
-Alternatively, remove the stale socket manually on the server:
-
-```sh
-rm $XDG_RUNTIME_DIR/subportal.sock
-```
-
-Then reconnect via SSH.
+1. The client daemon (`subportald`) is running on your desktop:
+   ```sh
+   systemctl --user status subportald
+   ```
+2. Both machines have internet connectivity
+3. No firewall is blocking QUIC (UDP) traffic
 
 ## "Permission denied"
 
 **Symptom:** `subportal status` returns a permission error.
 
-The daemon uses `SO_PEERCRED` to verify that the connecting process runs as
+The agent uses `SO_PEERCRED` to verify that the connecting process runs as
 the same UID. This fails if:
 
 1. The socket is owned by a different user.
-2. The daemon was started as a different user than the one SSH is
-   forwarding to.
+2. The agent was started as a different user.
 
 Verify UIDs match:
 
@@ -146,10 +133,15 @@ Workaround: use `scp`, `rsync`, or similar to transfer large files.
 
 ## High latency
 
-`subportal status` reports the round-trip latency through the SSH tunnel. High
-latency reflects the SSH connection quality. There is no subportal-specific
-tuning -- improve your SSH connection (compression, KeepAlive settings, or a
-closer server).
+`subportal status` reports the round-trip latency through the iroh
+connection. High latency may reflect:
+
+- Geographic distance between client and server
+- Network congestion
+- Relay usage (if direct connection cannot be established)
+
+iroh attempts direct peer-to-peer connections but falls back to relay
+servers when both endpoints are behind NAT.
 
 ## Enabling debug logging
 
@@ -158,6 +150,9 @@ Set the `RUST_LOG` environment variable for verbose output:
 ```sh
 # Server-side:
 RUST_LOG=debug subportal status
+
+# Agent:
+RUST_LOG=debug subportal-agent run
 
 # Client daemon (restart with):
 RUST_LOG=debug subportald
@@ -174,14 +169,13 @@ Then reproduce the issue and examine the output.
 
 ## Checking the SUBPORTAL_SOCKET path
 
-If you use a non-default socket path, make sure both sides agree:
+If you use a non-default socket path, make sure both the agent and CLI
+tools agree:
 
 ```sh
 # What the server-side tools are using:
 echo ${SUBPORTAL_SOCKET:-$XDG_RUNTIME_DIR/subportal.sock}
 
-# What the daemon is listening on (check the process arguments):
-ps aux | grep subportald
+# What the agent is listening on (check the process arguments):
+ps aux | grep subportal-agent
 ```
-
-The SSH `RemoteForward` must map the server path to the client path.
