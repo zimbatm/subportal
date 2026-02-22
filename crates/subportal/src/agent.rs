@@ -6,12 +6,14 @@ use subportal_iroh::control::{
 };
 use subportal_iroh::keypair::load_or_generate_keypair;
 use subportal_iroh::peers::ClientRegistry;
+use subportal_lib::protocol::{Request, Response, SubportalError};
 use subportal_lib::server::Server;
 use tokio::io::BufReader;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use crate::hub::{self, ConnectedClient, SharedHub};
+use crate::hub::{self, send_to_connection, ConnectedClient, SharedHub};
+use crate::router::{self, Strategy};
 
 /// Run the agent: listen on Unix socket + iroh endpoint.
 pub async fn run() -> Result<()> {
@@ -232,8 +234,7 @@ async fn accept_unix_loop(server: Server, hub: SharedHub) {
                     if let Some(ref h) = host {
                         info!("unix request from {h}: {request:?}");
                     }
-                    let mut hub_lock = hub.lock().await;
-                    match hub_lock.route_request(&request).await {
+                    match handle_unix_request(&hub, &request).await {
                         Ok(response) => {
                             if let Err(e) = responder.send_ok(response).await {
                                 error!("failed to send response: {e:#}");
@@ -250,6 +251,104 @@ async fn accept_unix_loop(server: Server, hub: SharedHub) {
             Err(e) => {
                 error!("failed to accept unix connection: {e:#}");
             }
+        }
+    }
+}
+
+/// Handle a unix request, releasing the hub mutex before performing QUIC I/O.
+async fn handle_unix_request(
+    hub: &SharedHub,
+    request: &Request,
+) -> Result<Response, SubportalError> {
+    let strategy = router::strategy_for(request);
+
+    match strategy {
+        Strategy::Direct => {
+            // Fast path: lock hub, handle directly, unlock. No QUIC I/O.
+            let mut hub_lock = hub.lock().await;
+            hub_lock.route_request(request).await
+        }
+        Strategy::PickBest(cap) => {
+            // Lock hub, find best client and clone its Connection, then unlock
+            // before doing QUIC I/O.
+            let connection = {
+                let hub_lock = hub.lock().await;
+                let infos = hub_lock.client_infos();
+                let best = router::pick_best(&infos, cap).ok_or(SubportalError::NoClient)?;
+                let endpoint_id = &best.endpoint_id;
+                let client = hub_lock
+                    .clients
+                    .get(endpoint_id)
+                    .ok_or(SubportalError::NoClient)?;
+                client.connection.clone()
+            };
+            // Hub mutex is released here; perform QUIC I/O without the lock.
+            let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+            send_to_connection(&connection, &value).await
+        }
+        Strategy::FanOut(cap) => {
+            // Lock hub, find targets, clone Connections, allocate notification_id,
+            // then unlock before QUIC I/O.
+            let (connections, notification_id, value) = {
+                let mut hub_lock = hub.lock().await;
+                let infos = hub_lock.client_infos();
+                let targets = router::fan_out(&infos, cap);
+                if targets.is_empty() {
+                    return Err(SubportalError::NoClient);
+                }
+
+                let notification_id = hub_lock.next_notification_id();
+
+                // Collect endpoint_ids and clone their Connections
+                let conns: Vec<(String, Connection)> = targets
+                    .iter()
+                    .filter_map(|t| {
+                        hub_lock
+                            .clients
+                            .get(&t.endpoint_id)
+                            .map(|c| (t.endpoint_id.clone(), c.connection.clone()))
+                    })
+                    .collect();
+
+                // Serialize the request and inject notification_id
+                let mut value =
+                    serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+                if let Some(params) =
+                    value.get_mut("parameters").and_then(|v| v.as_object_mut())
+                {
+                    params.insert(
+                        "notification_id".into(),
+                        serde_json::Value::String(notification_id.clone()),
+                    );
+                }
+
+                (conns, notification_id, value)
+            };
+            // Hub mutex is released here; perform QUIC I/O without the lock.
+            let mut sent_to = Vec::new();
+            for (eid, connection) in &connections {
+                match send_to_connection(connection, &value).await {
+                    Ok(_) => {
+                        sent_to.push(eid.clone());
+                    }
+                    Err(e) => {
+                        warn!(endpoint_id = %eid, "failed to fan-out to client: {e}");
+                    }
+                }
+            }
+
+            // Re-lock to store notification state
+            {
+                let mut hub_lock = hub.lock().await;
+                hub_lock.pending_notifications.insert(
+                    notification_id.clone(),
+                    hub::NotificationState { sent_to },
+                );
+            }
+
+            Ok(Response::NotifyDelivered {
+                id: notification_id,
+            })
         }
     }
 }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use subportal_iroh::consts::data_dir;
 use subportal_iroh::peers::{ClientEntry, ClientRegistry};
-use subportal_lib::client::Client;
+use subportal_lib::client::{Client, ClientError};
 use subportal_lib::protocol::{Request, Response};
 
 /// Generate and print an enrollment ticket to stdout.
@@ -22,9 +22,9 @@ pub async fn print_ticket(ttl: u64) -> Result<()> {
         Ok(_) => {
             anyhow::bail!("unexpected response from agent");
         }
-        Err(e) => {
+        Err(ClientError::DaemonUnreachable) => {
             let path = client.path();
-            eprintln!("Failed to generate ticket: {e}");
+            eprintln!("Failed to generate ticket: daemon is not reachable");
             if path.exists() {
                 eprintln!("  socket: {} (exists but not responding)", path.display());
             } else {
@@ -33,6 +33,9 @@ pub async fn print_ticket(ttl: u64) -> Result<()> {
             eprintln!();
             eprintln!("Is the agent running? Start it with: subportal agent");
             anyhow::bail!("could not connect to running agent");
+        }
+        Err(e) => {
+            anyhow::bail!("failed to generate ticket: {e}");
         }
     }
 }
@@ -85,12 +88,12 @@ pub async fn revoke_client(name_or_id: &str) -> Result<()> {
         Ok(_) => {
             anyhow::bail!("unexpected response from agent");
         }
-        Err(subportal_lib::protocol::SubportalError::NotFound { what }) => {
+        Err(ClientError::Protocol(subportal_lib::protocol::SubportalError::NotFound { what })) => {
             anyhow::bail!("{what}");
         }
-        Err(e) => {
+        Err(ClientError::DaemonUnreachable) => {
             let path = client.path();
-            eprintln!("Failed to revoke client: {e}");
+            eprintln!("Failed to revoke client: daemon is not reachable");
             if path.exists() {
                 eprintln!("  socket: {} (exists but not responding)", path.display());
             } else {
@@ -99,6 +102,9 @@ pub async fn revoke_client(name_or_id: &str) -> Result<()> {
             eprintln!();
             eprintln!("Is the agent running? Start it with: subportal agent");
             anyhow::bail!("could not connect to running agent");
+        }
+        Err(e) => {
+            anyhow::bail!("failed to revoke client: {e}");
         }
     }
 }

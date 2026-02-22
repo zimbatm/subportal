@@ -16,7 +16,7 @@ use std::time::Instant;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use clap::{Parser, Subcommand};
-use subportal_lib::client::Client;
+use subportal_lib::client::{Client, ClientError};
 use subportal_lib::consts::MAX_FILE_SIZE;
 use subportal_lib::protocol::{Request, Response, SubportalError};
 
@@ -78,20 +78,20 @@ fn is_url(target: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn no_client_error(client: &Client) {
+fn daemon_unreachable_error(client: &Client) {
     let path = client.path();
     eprintln!("subportal: daemon is not reachable");
     if path.exists() {
         eprintln!("  socket: {} (exists but not responding)", path.display());
-        eprintln!(
-            "  hint: is the agent running? check with: systemctl --user status subportal-agent"
-        );
     } else {
         eprintln!("  socket: {} (not found)", path.display());
-        eprintln!(
-            "  hint: is the agent running? check with: systemctl --user status subportal-agent"
-        );
     }
+    eprintln!("  hint: start the agent with: subportal agent");
+}
+
+fn no_desktop_error() {
+    eprintln!("subportal: no desktop client connected");
+    eprintln!("  hint: is subportal-desktop running on your local machine?");
 }
 
 #[tokio::main]
@@ -146,8 +146,12 @@ async fn main() -> ExitCode {
                     eprintln!("unexpected response from daemon");
                     ExitCode::from(1)
                 }
-                Err(SubportalError::NoClient) => {
-                    no_client_error(&client);
+                Err(ClientError::DaemonUnreachable) => {
+                    daemon_unreachable_error(&client);
+                    ExitCode::from(1)
+                }
+                Err(ClientError::Protocol(SubportalError::NoClient)) => {
+                    no_desktop_error();
                     ExitCode::from(1)
                 }
                 Err(e) => {
@@ -201,11 +205,15 @@ async fn main() -> ExitCode {
 
             match client.call(&request).await {
                 Ok(_) => ExitCode::SUCCESS,
-                Err(SubportalError::NoClient) => {
-                    no_client_error(&client);
+                Err(ClientError::DaemonUnreachable) => {
+                    daemon_unreachable_error(&client);
                     ExitCode::from(1)
                 }
-                Err(SubportalError::UserDenied) => {
+                Err(ClientError::Protocol(SubportalError::NoClient)) => {
+                    no_desktop_error();
+                    ExitCode::from(1)
+                }
+                Err(ClientError::Protocol(SubportalError::UserDenied)) => {
                     eprintln!("subportal: request was denied by the user");
                     ExitCode::from(1)
                 }
@@ -231,8 +239,12 @@ async fn main() -> ExitCode {
 
             match client.call(&request).await {
                 Ok(_) => ExitCode::SUCCESS,
-                Err(SubportalError::NoClient) => {
-                    no_client_error(&client);
+                Err(ClientError::DaemonUnreachable) => {
+                    daemon_unreachable_error(&client);
+                    ExitCode::from(1)
+                }
+                Err(ClientError::Protocol(SubportalError::NoClient)) => {
+                    no_desktop_error();
                     ExitCode::from(1)
                 }
                 Err(e) => {

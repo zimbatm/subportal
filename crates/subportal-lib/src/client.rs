@@ -1,8 +1,11 @@
 //! Unix socket client for sending requests to the subportal daemon.
 //!
 //! The [`Client`] opens a new Unix connection for each request (one-shot
-//! pattern), sends a Varlink JSON message, and reads the response. If the
-//! daemon is unreachable, all calls return [`SubportalError::NoClient`].
+//! pattern), sends a Varlink JSON message, and reads the response.
+//!
+//! Errors are returned as [`ClientError`], which distinguishes transport
+//! failures ([`ClientError::DaemonUnreachable`]) from protocol-level errors
+//! returned by the daemon ([`ClientError::Protocol`]).
 //!
 //! The target socket path is read from the `SUBPORTAL_SOCKET` environment
 //! variable, falling back to [`crate::consts::default_socket_path`].
@@ -14,6 +17,32 @@ use tokio::net::UnixStream;
 
 use crate::consts::{default_socket_path, SOCKET_PATH_ENV};
 use crate::protocol::{read_message, write_message, Request, Response, SubportalError, WireResponse};
+
+/// Errors returned by [`Client::call`].
+#[derive(Debug)]
+pub enum ClientError {
+    /// The daemon socket could not be reached (connection refused, not found, etc.).
+    DaemonUnreachable,
+    /// The daemon responded with a protocol-level error.
+    Protocol(SubportalError),
+}
+
+impl std::fmt::Display for ClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClientError::DaemonUnreachable => write!(f, "daemon is not reachable"),
+            ClientError::Protocol(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for ClientError {}
+
+impl From<SubportalError> for ClientError {
+    fn from(e: SubportalError) -> Self {
+        ClientError::Protocol(e)
+    }
+}
 
 /// A client that connects to the subportal daemon over a Unix socket.
 pub struct Client {
@@ -57,14 +86,17 @@ impl Client {
     }
 
     /// Send a request and receive the response. Opens a new connection each time.
-    /// Returns `SubportalError::NoClient` if the daemon is unreachable.
-    pub async fn call(&self, request: &Request) -> Result<Response, SubportalError> {
+    ///
+    /// Returns [`ClientError::DaemonUnreachable`] if the socket cannot be
+    /// connected to, and [`ClientError::Protocol`] for errors returned by the
+    /// daemon itself (e.g. `NoClient` when no desktop client is connected).
+    pub async fn call(&self, request: &Request) -> Result<Response, ClientError> {
         let mut stream = UnixStream::connect(&self.path)
             .await
-            .map_err(|_| SubportalError::NoClient)?;
+            .map_err(|_| ClientError::DaemonUnreachable)?;
 
         let mut value =
-            serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+            serde_json::to_value(request).map_err(|_| ClientError::DaemonUnreachable)?;
 
         // Inject the host identifier into the request parameters.
         if let Some(ref host) = self.host {
@@ -75,11 +107,11 @@ impl Client {
 
         write_message(&mut stream, &value)
             .await
-            .map_err(|_| SubportalError::NoClient)?;
+            .map_err(|_| ClientError::DaemonUnreachable)?;
 
         let wire_resp: WireResponse = read_message(&mut BufReader::new(&mut stream))
             .await
-            .map_err(|_| SubportalError::NoClient)?;
+            .map_err(|_| ClientError::DaemonUnreachable)?;
 
         // Check for error response
         if let Some(ref err_id) = wire_resp.error {
@@ -89,11 +121,11 @@ impl Client {
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
             if let Some(e) = SubportalError::from_wire(err_id, &params) {
-                return Err(e);
+                return Err(ClientError::Protocol(e));
             }
-            return Err(SubportalError::NotSupported {
+            return Err(ClientError::Protocol(SubportalError::NotSupported {
                 capability: "unknown".into(),
-            });
+            }));
         }
 
         // Parse success response based on what we sent

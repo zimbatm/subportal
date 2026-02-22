@@ -83,13 +83,13 @@ impl Hub {
     }
 
     /// Generate a unique notification ID.
-    fn next_notification_id(&mut self) -> String {
+    pub fn next_notification_id(&mut self) -> String {
         self.notification_counter += 1;
         format!("n{}", self.notification_counter)
     }
 
     /// Get a snapshot of connected client info for routing.
-    fn client_infos(&self) -> Vec<ClientInfo> {
+    pub fn client_infos(&self) -> Vec<ClientInfo> {
         self.clients
             .values()
             .map(|c| ClientInfo {
@@ -193,33 +193,7 @@ impl Hub {
             .get(endpoint_id)
             .ok_or(SubportalError::NoClient)?;
 
-        let (mut send, mut recv) = client
-            .connection
-            .open_bi()
-            .await
-            .map_err(|_| SubportalError::NoClient)?;
-
-        subportal_iroh::transport::send_request(&mut send, req)
-            .await
-            .map_err(|_| SubportalError::NoClient)?;
-
-        let resp: WireResponse = subportal_iroh::transport::recv_response(&mut recv)
-            .await
-            .map_err(|_| SubportalError::NoClient)?;
-
-        // Check for error response
-        if let Some(ref err_id) = resp.error {
-            let params = resp
-                .parameters
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
-            if let Some(e) = SubportalError::from_wire(err_id, &params) {
-                return Err(e);
-            }
-        }
-
-        Ok(Response::Ok)
+        send_to_connection(&client.connection, req).await
     }
 
     /// Broadcast a dismiss notification to all clients except the originator.
@@ -326,6 +300,41 @@ impl Hub {
 
         Ok(Response::Ok)
     }
+}
+
+/// Send a request to a connection via a new QUIC bi-stream, without requiring
+/// a reference to the Hub. This allows callers to perform QUIC I/O after
+/// releasing the hub mutex.
+pub async fn send_to_connection(
+    connection: &Connection,
+    req: &serde_json::Value,
+) -> Result<Response, SubportalError> {
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|_| SubportalError::NoClient)?;
+
+    subportal_iroh::transport::send_request(&mut send, req)
+        .await
+        .map_err(|_| SubportalError::NoClient)?;
+
+    let resp: WireResponse = subportal_iroh::transport::recv_response(&mut recv)
+        .await
+        .map_err(|_| SubportalError::NoClient)?;
+
+    // Check for error response
+    if let Some(ref err_id) = resp.error {
+        let params = resp
+            .parameters
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+        if let Some(e) = SubportalError::from_wire(err_id, &params) {
+            return Err(e);
+        }
+    }
+
+    Ok(Response::Ok)
 }
 
 /// Thread-safe handle to the hub.

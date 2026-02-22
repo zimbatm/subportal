@@ -1,4 +1,4 @@
-use subportal_lib::client::Client;
+use subportal_lib::client::{Client, ClientError};
 use subportal_lib::protocol::{Request, Response, SubportalError};
 use subportal_lib::server::Server;
 
@@ -158,7 +158,10 @@ async fn error_user_denied() {
     let (client, handle) = spawn_server(|_| Err(SubportalError::UserDenied)).await;
 
     let err = client.call(&Request::Ping {}).await.unwrap_err();
-    assert_eq!(err, SubportalError::UserDenied);
+    match err {
+        ClientError::Protocol(SubportalError::UserDenied) => {}
+        other => panic!("expected Protocol(UserDenied), got {other:?}"),
+    }
     handle.await.unwrap();
 }
 
@@ -172,12 +175,12 @@ async fn error_not_supported() {
     .await;
 
     let err = client.call(&Request::Ping {}).await.unwrap_err();
-    assert_eq!(
-        err,
-        SubportalError::NotSupported {
-            capability: "OpenFile".into()
+    match err {
+        ClientError::Protocol(SubportalError::NotSupported { capability }) => {
+            assert_eq!(capability, "OpenFile");
         }
-    );
+        other => panic!("expected Protocol(NotSupported), got {other:?}"),
+    }
     handle.await.unwrap();
 }
 
@@ -191,22 +194,25 @@ async fn error_file_too_large() {
     .await;
 
     let err = client.call(&Request::Ping {}).await.unwrap_err();
-    assert_eq!(
-        err,
-        SubportalError::FileTooLarge {
-            max_bytes: 5_242_880
+    match err {
+        ClientError::Protocol(SubportalError::FileTooLarge { max_bytes }) => {
+            assert_eq!(max_bytes, 5_242_880);
         }
-    );
+        other => panic!("expected Protocol(FileTooLarge), got {other:?}"),
+    }
     handle.await.unwrap();
 }
 
 #[tokio::test]
-async fn no_server_returns_no_client() {
+async fn no_server_returns_daemon_unreachable() {
     let tmp = tempfile::tempdir().unwrap();
     let sock = tmp.path().join("nonexistent.sock");
     let client = Client::with_path(sock);
     let err = client.call(&Request::Ping {}).await.unwrap_err();
-    assert_eq!(err, SubportalError::NoClient);
+    match err {
+        ClientError::DaemonUnreachable => {}
+        other => panic!("expected DaemonUnreachable, got {other:?}"),
+    }
 }
 
 #[tokio::test]

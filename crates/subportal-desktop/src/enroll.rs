@@ -82,5 +82,27 @@ pub async fn enroll_from_stdin() -> Result<()> {
 
     eprintln!("Enrolled with server '{}'.", ticket.hostname);
 
+    // Signal running daemon to reload servers
+    signal_daemon_reload();
+
     Ok(())
+}
+
+/// Send SIGHUP to the running subportal-desktop daemon so it picks up the
+/// updated server registry. Falls back to printing a hint if the pidfile
+/// is absent or the signal fails.
+fn signal_daemon_reload() {
+    match crate::read_pidfile() {
+        Some(pid) => {
+            let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGHUP) };
+            if ret == 0 {
+                eprintln!("Signaled running daemon to reload.");
+            } else {
+                eprintln!("hint: restart subportal-desktop to connect to the new server");
+            }
+        }
+        None => {
+            eprintln!("hint: restart subportal-desktop to connect to the new server");
+        }
+    }
 }

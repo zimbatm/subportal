@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use subportal_lib::client::Client;
+use subportal_lib::client::{Client, ClientError};
 use subportal_lib::consts::MAX_FILE_SIZE;
 use subportal_lib::protocol::{Request, SubportalError};
 
@@ -105,7 +105,7 @@ async fn main() -> ExitCode {
 
     match client.call(&request).await {
         Ok(_) => ExitCode::SUCCESS,
-        Err(SubportalError::NoClient) => {
+        Err(ClientError::DaemonUnreachable) => {
             let path = client.path();
             eprintln!("xdg-open: subportal daemon is not reachable");
             if path.exists() {
@@ -113,9 +113,15 @@ async fn main() -> ExitCode {
             } else {
                 eprintln!("  socket: {} (not found)", path.display());
             }
+            eprintln!("  hint: start the agent with: subportal agent");
             ExitCode::from(3)
         }
-        Err(SubportalError::UserDenied) => {
+        Err(ClientError::Protocol(SubportalError::NoClient)) => {
+            eprintln!("xdg-open: no desktop client connected");
+            eprintln!("  hint: is subportal-desktop running on your local machine?");
+            ExitCode::from(3)
+        }
+        Err(ClientError::Protocol(SubportalError::UserDenied)) => {
             eprintln!("xdg-open: request was denied by the user");
             ExitCode::from(4)
         }

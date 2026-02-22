@@ -7,7 +7,7 @@
 
 use std::process::ExitCode;
 
-use subportal_lib::client::Client;
+use subportal_lib::client::{Client, ClientError};
 use subportal_lib::protocol::{Request, SubportalError};
 
 fn print_usage() {
@@ -127,7 +127,7 @@ async fn main() -> ExitCode {
 
     match client.call(&request).await {
         Ok(_) => ExitCode::SUCCESS,
-        Err(SubportalError::NoClient) => {
+        Err(ClientError::DaemonUnreachable) => {
             let path = client.path();
             eprintln!("notify-send: subportal daemon is not reachable");
             if path.exists() {
@@ -135,6 +135,12 @@ async fn main() -> ExitCode {
             } else {
                 eprintln!("  socket: {} (not found)", path.display());
             }
+            eprintln!("  hint: start the agent with: subportal agent");
+            ExitCode::from(1)
+        }
+        Err(ClientError::Protocol(SubportalError::NoClient)) => {
+            eprintln!("notify-send: no desktop client connected");
+            eprintln!("  hint: is subportal-desktop running on your local machine?");
             ExitCode::from(1)
         }
         Err(e) => {

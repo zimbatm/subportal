@@ -10,6 +10,9 @@ mod focus;
 mod handler;
 mod portal;
 
+use std::collections::HashMap;
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use subportal_iroh::consts::{data_dir, ALPN, KEYPAIR_FILE};
@@ -17,11 +20,12 @@ use subportal_iroh::control::{
     read_control, write_control, ClientHello, ControlMessage, ServerHello,
 };
 use subportal_iroh::keypair::load_or_generate_keypair;
-use subportal_iroh::peers::ServerRegistry;
+use subportal_iroh::peers::{ServerEntry, ServerRegistry};
 use subportal_iroh::ticket::Ticket;
 use subportal_iroh::transport;
 use subportal_lib::protocol::Request;
 use tokio::io::BufReader;
+use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 #[derive(Parser)]
@@ -57,6 +61,61 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Return the pidfile path: `$XDG_RUNTIME_DIR/subportal-desktop.pid`.
+fn pidfile_path() -> PathBuf {
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
+        let uid = unsafe { libc::getuid() };
+        format!("/run/user/{uid}")
+    });
+    PathBuf::from(runtime_dir).join("subportal-desktop.pid")
+}
+
+/// Write our PID to the pidfile.
+fn write_pidfile() -> Result<()> {
+    let path = pidfile_path();
+    std::fs::write(&path, std::process::id().to_string())
+        .with_context(|| format!("failed to write pidfile {}", path.display()))?;
+    Ok(())
+}
+
+/// Remove the pidfile on shutdown.
+fn remove_pidfile() {
+    let path = pidfile_path();
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Read the PID from the pidfile, if it exists.
+pub fn read_pidfile() -> Option<u32> {
+    let path = pidfile_path();
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+/// Spawn a reconnect loop for a single server, returning its JoinHandle.
+fn spawn_server_connection(
+    endpoint: &iroh::Endpoint,
+    server: &ServerEntry,
+) -> JoinHandle<()> {
+    let ep = endpoint.clone();
+    let server = server.clone();
+    tokio::spawn(async move {
+        loop {
+            info!(name = %server.name, "connecting to server");
+            match connect_to_server(&ep, &server).await {
+                Ok(()) => {
+                    info!(name = %server.name, "disconnected from server");
+                }
+                Err(e) => {
+                    warn!(name = %server.name, "connection error: {e:#}");
+                }
+            }
+            // Reconnect after a delay
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    })
+}
+
 async fn run() -> Result<()> {
     let dir = data_dir();
 
@@ -65,58 +124,103 @@ async fn run() -> Result<()> {
 
     let key = load_or_generate_keypair(&dir.join(KEYPAIR_FILE)).await?;
 
-    let registry = ServerRegistry::load(&dir).await?;
-    let servers = registry.list().to_vec();
-
-    if servers.is_empty() {
-        info!("no enrolled servers -- use 'subportal-desktop enroll' to add one");
-        // Still wait for signal so systemd doesn't restart us in a loop
-        tokio::signal::ctrl_c().await?;
-        return Ok(());
-    }
-
+    // Create endpoint eagerly even with zero servers, so we are ready for
+    // SIGHUP-triggered reloads after enrollment.
     let endpoint = iroh::Endpoint::builder()
         .secret_key(key)
         .bind()
         .await
         .context("failed to bind iroh endpoint")?;
 
-    info!(
-        "subportal-desktop running, endpoint: {}, connecting to {} server(s)",
-        endpoint.id(),
-        servers.len()
-    );
+    info!("subportal-desktop running, endpoint: {}", endpoint.id());
 
-    let mut handles = Vec::new();
+    write_pidfile()?;
 
-    for server in &servers {
-        let ep = endpoint.clone();
-        let server = server.clone();
-        let handle = tokio::spawn(async move {
-            loop {
-                info!(name = %server.name, "connecting to server");
-                match connect_to_server(&ep, &server).await {
-                    Ok(()) => {
-                        info!(name = %server.name, "disconnected from server");
-                    }
-                    Err(e) => {
-                        warn!(name = %server.name, "connection error: {e:#}");
-                    }
-                }
-                // Reconnect after a delay
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        });
-        handles.push(handle);
+    // Track active server connections by endpoint_id.
+    let mut active: HashMap<String, JoinHandle<()>> = HashMap::new();
+
+    // Initial load
+    let registry = ServerRegistry::load(&dir).await?;
+    let servers = registry.list().to_vec();
+
+    if servers.is_empty() {
+        info!("no enrolled servers -- use 'subportal-desktop enroll' to add one");
+    } else {
+        info!("connecting to {} server(s)", servers.len());
     }
 
-    // Wait for shutdown
-    tokio::signal::ctrl_c().await?;
-    info!("shutting down");
-    for h in handles {
+    for server in &servers {
+        let handle = spawn_server_connection(&endpoint, server);
+        active.insert(server.endpoint_id.clone(), handle);
+    }
+
+    // Set up SIGHUP handler for live reload
+    let mut sighup =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            .context("failed to register SIGHUP handler")?;
+
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("shutting down");
+                break;
+            }
+            _ = sighup.recv() => {
+                info!("received SIGHUP, reloading servers");
+                match reload_servers(&dir, &endpoint, &mut active).await {
+                    Ok(()) => info!("reload complete"),
+                    Err(e) => warn!("reload error: {e:#}"),
+                }
+            }
+        }
+    }
+
+    // Cleanup
+    for (_, h) in &active {
         h.abort();
     }
     endpoint.close().await;
+    remove_pidfile();
+
+    Ok(())
+}
+
+/// Reload `servers.json`, diff against active connections, spawn new ones
+/// and abort removed ones.
+async fn reload_servers(
+    dir: &std::path::Path,
+    endpoint: &iroh::Endpoint,
+    active: &mut HashMap<String, JoinHandle<()>>,
+) -> Result<()> {
+    let registry = ServerRegistry::load(dir).await?;
+    let servers = registry.list().to_vec();
+
+    let new_ids: std::collections::HashSet<String> = servers
+        .iter()
+        .map(|s| s.endpoint_id.clone())
+        .collect();
+
+    // Remove connections for servers no longer in the registry
+    let to_remove: Vec<String> = active
+        .keys()
+        .filter(|id| !new_ids.contains(*id))
+        .cloned()
+        .collect();
+    for id in to_remove {
+        if let Some(h) = active.remove(&id) {
+            info!(endpoint_id = %id, "removing connection to departed server");
+            h.abort();
+        }
+    }
+
+    // Add connections for new servers
+    for server in &servers {
+        if !active.contains_key(&server.endpoint_id) {
+            info!(name = %server.name, "adding connection to new server");
+            let handle = spawn_server_connection(endpoint, server);
+            active.insert(server.endpoint_id.clone(), handle);
+        }
+    }
 
     Ok(())
 }
@@ -267,6 +371,13 @@ async fn forget(name_or_id: &str) -> Result<()> {
     let mut registry = ServerRegistry::load(&dir).await?;
     if registry.remove(name_or_id).await? {
         println!("Server '{}' removed.", name_or_id);
+        // Signal running daemon to drop the connection
+        if let Some(pid) = read_pidfile() {
+            let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGHUP) };
+            if ret == 0 {
+                println!("Signaled running daemon to reload.");
+            }
+        }
     } else {
         anyhow::bail!("No server found matching '{}'", name_or_id);
     }
