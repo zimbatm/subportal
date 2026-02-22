@@ -19,12 +19,15 @@ overhead).
 
 The interface is named `io.subportal`. All methods accept an optional `host`
 parameter (string) that identifies the originating server's hostname.
-Server-side tools set this automatically via `gethostname(2)`.
+Server-side tools set this automatically via `gethostname(2)`. The `host`
+field is a transport-level concern: the client library injects it into the
+JSON before sending, and the server extracts it before deserializing into the
+typed request. It does not appear in the typed `Request` enum.
 
 ```
 interface io.subportal
 
-method Ping(host: ?string) -> (capabilities: []string, version: string)
+method Ping(host: ?string) -> (capabilities: []string, version: string, clients: []string, endpoint_id: string)
 
 method OpenURI(uri: string, host: ?string) -> ()
 
@@ -41,12 +44,15 @@ method Notify(
     urgency: ?string,
     icon: ?string,
     host: ?string
-) -> ()
+) -> (id: string)
+
+method NotifyDismiss(id: string) -> ()
 
 error io.subportal.UserDenied ()
 error io.subportal.NotSupported (capability: string)
 error io.subportal.FileTooLarge (max_bytes: int)
 error io.subportal.NoClient ()
+error io.subportal.NotFound (what: string)
 ```
 
 ## Methods
@@ -67,6 +73,8 @@ Check connectivity and discover daemon capabilities.
 | -------------- | --------- | ------------------------------------ |
 | `capabilities` | []string  | List of supported capabilities       |
 | `version`      | string    | Daemon protocol version              |
+| `clients`      | []string  | Names of connected desktop clients   |
+| `endpoint_id`  | string    | Agent's iroh endpoint ID             |
 
 V1 capabilities: `OpenURI`, `OpenFile`, `Notify`.
 
@@ -123,10 +131,33 @@ Show a desktop notification. No confirmation is required.
 | `icon`    | string  | no       | Icon name (e.g. `dialog-information`)    |
 | `host`    | string  | no       | Hostname of the originating server       |
 
-**Returns:** empty object on success.
+**Returns:**
+
+| Name | Type   | Description                                      |
+| ---- | ------ | ------------------------------------------------ |
+| `id` | string | Agent-assigned notification ID for dismiss tracking |
 
 The daemon sets the notification app name to `subportal@<host>` when a host
 is provided, or `subportal` otherwise.
+
+When the agent forwards a `Notify` request to clients (fan-out routing), it
+injects an additional `notification_id` field into the wire parameters. Clients
+use this ID to map their local notification IDs back to the agent-level ID for
+cross-device dismiss tracking via `NotifyDismiss`.
+
+### NotifyDismiss
+
+Dismiss a notification across all connected clients. When a notification is
+dismissed on one device, the agent broadcasts the dismissal to all other
+devices that received it.
+
+**Parameters:**
+
+| Name | Type   | Required | Description                              |
+| ---- | ------ | -------- | ---------------------------------------- |
+| `id` | string | yes      | The notification ID returned by `Notify` |
+
+**Returns:** empty object on success.
 
 ## Errors
 
@@ -163,6 +194,16 @@ library when the socket connection fails; it is never sent over the wire.
 
 **Parameters:** none.
 
+### io.subportal.NotFound
+
+The referenced resource (e.g. a client name or endpoint ID) was not found.
+
+**Parameters:**
+
+| Name   | Type   | Description                              |
+| ------ | ------ | ---------------------------------------- |
+| `what` | string | Description of what was not found        |
+
 ## Wire examples
 
 ### Ping
@@ -174,7 +215,7 @@ Request:
 
 Response:
 ```json
-{"parameters":{"capabilities":["OpenURI","OpenFile","Notify"],"version":"0.1.0"}}
+{"parameters":{"capabilities":["OpenURI","OpenFile","Notify"],"version":"0.2.0","clients":["laptop"],"endpoint_id":"abc123"}}
 ```
 
 ### OpenURI

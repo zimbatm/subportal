@@ -45,12 +45,15 @@ Varlink over Unix socket (local tools to agent) and Varlink over QUIC
 All methods accept an optional `host` parameter (string) that identifies the
 originating server's hostname. Server-side tools set this automatically via
 `gethostname(2)`. The daemon uses it to annotate notifications and logs (e.g.
-`subportal@myserver` as the notification app name).
+`subportal@myserver` as the notification app name). In the implementation,
+`host` is a transport-level field: the client library injects it into the
+JSON before sending, and the server extracts it before deserializing into the
+typed request. It is not part of the typed `Request` enum.
 
 ```
 interface io.subportal
 
-method Ping(host: ?string) -> (capabilities: []string, version: string)
+method Ping(host: ?string) -> (capabilities: []string, version: string, clients: []string, endpoint_id: string)
 
 method OpenURI(uri: string, host: ?string) -> ()
 
@@ -67,7 +70,9 @@ method Notify(
     urgency: ?string,
     icon: ?string,
     host: ?string
-) -> ()
+) -> (id: string)
+
+method NotifyDismiss(id: string) -> ()
 
 method GenerateTicket(ttl: int) -> (ticket_json: string)
 
@@ -87,6 +92,11 @@ error io.subportal.NotFound (what: string)
 
 File content in `OpenFile` is base64-encoded. 5MB cap for v1.
 
+When the agent forwards a `Notify` request to clients (fan-out), it injects
+an additional `notification_id` field into the wire parameters. Clients use
+this ID to map their local notification IDs back to the agent-level ID for
+cross-device dismiss tracking via `NotifyDismiss`.
+
 ## Server-Side Commands
 
 ### Drop-in replacements
@@ -104,7 +114,7 @@ transparently.
 
 - Parses standard `notify-send` flags (`-u`, `-i`, etc.)
 - Forwards via `Notify`
-- If subportal unavailable -> silently fail (notifications are best-effort)
+- If subportal unavailable -> exit with error
 
 ### Explicit CLI
 
@@ -161,15 +171,18 @@ Connects to all enrolled agents on startup and reconnects automatically.
 
 ## Capability Handshake
 
-On first connection (or via `subportal status`), server calls `Ping`. Client
-responds with supported capabilities:
+Desktop clients advertise their supported capabilities in the `ClientHello`
+message when they connect to the agent. The agent caches these capabilities
+and uses them for routing decisions: if no connected client supports the
+requested capability, the agent returns `io.subportal.NoClient` without
+forwarding the request.
+
+The `Ping` method also returns the union of all connected clients'
+capabilities:
 
 ```json
-{"capabilities": ["OpenURI", "OpenFile", "Notify"], "version": "1.0"}
+{"capabilities": ["OpenURI", "OpenFile", "Notify"], "version": "0.2.0", "clients": ["laptop"], "endpoint_id": "abc123"}
 ```
-
-Server caches this for the session. If a command tries an unsupported
-capability, it gets `io.subportal.NotSupported` without a round-trip.
 
 ## Security Model
 
@@ -185,16 +198,6 @@ capability, it gets `io.subportal.NotSupported` without a round-trip.
   on the Unix socket.
 - **OpenURI/OpenFile**: User confirmation required before opening.
 - **Notify**: No confirmation (passive, low risk).
-
-### Trust configuration
-
-Optional `~/.config/subportal/trust.toml`:
-
-```toml
-[servers.myserver]
-auto_open_urls = false    # still confirm
-auto_open_files = false   # still confirm
-```
 
 ## Components
 
