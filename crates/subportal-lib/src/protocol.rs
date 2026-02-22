@@ -18,7 +18,7 @@ const NUL: u8 = 0;
 // ---------------------------------------------------------------------------
 
 /// A raw Varlink request as it appears on the wire.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VarlinkRequest {
     pub method: String,
     #[serde(default)]
@@ -46,18 +46,40 @@ pub enum Request {
     /// Open a URI in the client's default application.
     OpenURI { uri: String },
     /// Transfer a file (base64-encoded) and open it on the client.
-    OpenFile { name: String, mime: String, content: String },
+    OpenFile {
+        name: String,
+        mime: String,
+        content: String,
+    },
     /// Show a desktop notification on the client.
-    Notify { title: String, body: Option<String>, urgency: Option<String>, icon: Option<String> },
+    Notify {
+        title: String,
+        body: Option<String>,
+        urgency: Option<String>,
+        icon: Option<String>,
+    },
+    /// Dismiss a notification by its ID across all connected devices.
+    NotifyDismiss { id: String },
+    /// Generate an enrollment ticket (agent-only, via Unix socket).
+    GenerateTicket { ttl: u64 },
+    /// Revoke an enrolled client by name or endpoint ID (agent-only, via Unix socket).
+    RevokeClient { name_or_id: String },
 }
 
 /// A typed subportal response.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
     /// Reply to a [`Request::Ping`] with capabilities and version.
-    Ping { capabilities: Vec<String>, version: String },
+    Ping {
+        capabilities: Vec<String>,
+        version: String,
+    },
     /// Generic success for non-Ping requests.
     Ok,
+    /// Notification was delivered and assigned an ID for dismiss tracking.
+    NotifyDelivered { id: String },
+    /// Generated enrollment ticket JSON.
+    Ticket { ticket_json: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +97,8 @@ pub enum SubportalError {
     FileTooLarge { max_bytes: u64 },
     #[error("no client daemon reachable")]
     NoClient,
+    #[error("not found: {what}")]
+    NotFound { what: String },
 }
 
 impl SubportalError {
@@ -84,6 +108,7 @@ impl SubportalError {
             Self::NotSupported { .. } => "io.subportal.NotSupported",
             Self::FileTooLarge { .. } => "io.subportal.FileTooLarge",
             Self::NoClient => "io.subportal.NoClient",
+            Self::NotFound { .. } => "io.subportal.NotFound",
         }
     }
 
@@ -106,6 +131,14 @@ impl SubportalError {
                 Some(Self::FileTooLarge { max_bytes })
             }
             "io.subportal.NoClient" => Some(Self::NoClient),
+            "io.subportal.NotFound" => {
+                let what = parameters
+                    .get("what")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                Some(Self::NotFound { what })
+            }
             _ => None,
         }
     }
@@ -126,7 +159,11 @@ impl Request {
                 method: "io.subportal.OpenURI".into(),
                 parameters: serde_json::json!({ "uri": uri }),
             },
-            Request::OpenFile { name, mime, content } => VarlinkRequest {
+            Request::OpenFile {
+                name,
+                mime,
+                content,
+            } => VarlinkRequest {
                 method: "io.subportal.OpenFile".into(),
                 parameters: serde_json::json!({
                     "name": name,
@@ -134,7 +171,12 @@ impl Request {
                     "content": content,
                 }),
             },
-            Request::Notify { title, body, urgency, icon } => VarlinkRequest {
+            Request::Notify {
+                title,
+                body,
+                urgency,
+                icon,
+            } => VarlinkRequest {
                 method: "io.subportal.Notify".into(),
                 parameters: serde_json::json!({
                     "title": title,
@@ -143,6 +185,18 @@ impl Request {
                     "icon": icon,
                 }),
             },
+            Request::NotifyDismiss { id } => VarlinkRequest {
+                method: "io.subportal.NotifyDismiss".into(),
+                parameters: serde_json::json!({ "id": id }),
+            },
+            Request::GenerateTicket { ttl } => VarlinkRequest {
+                method: "io.subportal.GenerateTicket".into(),
+                parameters: serde_json::json!({ "ttl": ttl }),
+            },
+            Request::RevokeClient { ref name_or_id } => VarlinkRequest {
+                method: "io.subportal.RevokeClient".into(),
+                parameters: serde_json::json!({ "name_or_id": name_or_id }),
+            },
         }
     }
 
@@ -150,7 +204,9 @@ impl Request {
         match vr.method.as_str() {
             "io.subportal.Ping" => Ok(Request::Ping),
             "io.subportal.OpenURI" => {
-                let uri = vr.parameters.get("uri")
+                let uri = vr
+                    .parameters
+                    .get("uri")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'uri' parameter"))?
                     .to_string();
@@ -158,36 +214,78 @@ impl Request {
             }
             "io.subportal.OpenFile" => {
                 let params = &vr.parameters;
-                let name = params.get("name")
+                let name = params
+                    .get("name")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'name' parameter"))?
                     .to_string();
-                let mime = params.get("mime")
+                let mime = params
+                    .get("mime")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'mime' parameter"))?
                     .to_string();
-                let content = params.get("content")
+                let content = params
+                    .get("content")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'content' parameter"))?
                     .to_string();
-                Ok(Request::OpenFile { name, mime, content })
+                Ok(Request::OpenFile {
+                    name,
+                    mime,
+                    content,
+                })
             }
             "io.subportal.Notify" => {
                 let params = &vr.parameters;
-                let title = params.get("title")
+                let title = params
+                    .get("title")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("missing 'title' parameter"))?
                     .to_string();
-                let body = params.get("body")
+                let body = params
+                    .get("body")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let urgency = params.get("urgency")
+                let urgency = params
+                    .get("urgency")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let icon = params.get("icon")
+                let icon = params
+                    .get("icon")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                Ok(Request::Notify { title, body, urgency, icon })
+                Ok(Request::Notify {
+                    title,
+                    body,
+                    urgency,
+                    icon,
+                })
+            }
+            "io.subportal.NotifyDismiss" => {
+                let id = vr
+                    .parameters
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("missing 'id' parameter"))?
+                    .to_string();
+                Ok(Request::NotifyDismiss { id })
+            }
+            "io.subportal.GenerateTicket" => {
+                let ttl = vr
+                    .parameters
+                    .get("ttl")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| anyhow::anyhow!("missing 'ttl' parameter"))?;
+                Ok(Request::GenerateTicket { ttl })
+            }
+            "io.subportal.RevokeClient" => {
+                let name_or_id = vr
+                    .parameters
+                    .get("name_or_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("missing 'name_or_id' parameter"))?
+                    .to_string();
+                Ok(Request::RevokeClient { name_or_id })
             }
             other => anyhow::bail!("unknown method: {other}"),
         }
@@ -197,7 +295,10 @@ impl Request {
 impl Response {
     pub fn to_varlink(&self) -> VarlinkResponse {
         match self {
-            Response::Ping { capabilities, version } => VarlinkResponse {
+            Response::Ping {
+                capabilities,
+                version,
+            } => VarlinkResponse {
                 parameters: Some(serde_json::json!({
                     "capabilities": capabilities,
                     "version": version,
@@ -206,6 +307,14 @@ impl Response {
             },
             Response::Ok => VarlinkResponse {
                 parameters: Some(serde_json::Value::Object(Default::default())),
+                error: None,
+            },
+            Response::NotifyDelivered { id } => VarlinkResponse {
+                parameters: Some(serde_json::json!({ "id": id })),
+                error: None,
+            },
+            Response::Ticket { ref ticket_json } => VarlinkResponse {
+                parameters: Some(serde_json::json!({ "ticket_json": ticket_json })),
                 error: None,
             },
         }
@@ -220,6 +329,9 @@ impl SubportalError {
             }
             Self::FileTooLarge { max_bytes } => {
                 serde_json::json!({ "max_bytes": max_bytes })
+            }
+            Self::NotFound { what } => {
+                serde_json::json!({ "what": what })
             }
             _ => serde_json::Value::Object(Default::default()),
         };
@@ -239,7 +351,10 @@ pub async fn read_message<T: serde::de::DeserializeOwned>(
     reader: &mut (impl tokio::io::AsyncBufRead + Unpin),
 ) -> anyhow::Result<T> {
     let mut buf = Vec::new();
-    reader.take(MAX_MESSAGE_SIZE as u64 + 1).read_until(NUL, &mut buf).await?;
+    reader
+        .take(MAX_MESSAGE_SIZE as u64 + 1)
+        .read_until(NUL, &mut buf)
+        .await?;
 
     if buf.last() == Some(&NUL) {
         buf.pop(); // remove the NUL delimiter
@@ -363,9 +478,16 @@ mod tests {
     fn error_varlink_round_trip() {
         let errors = [
             SubportalError::UserDenied,
-            SubportalError::NotSupported { capability: "OpenFile".into() },
-            SubportalError::FileTooLarge { max_bytes: 5_242_880 },
+            SubportalError::NotSupported {
+                capability: "OpenFile".into(),
+            },
+            SubportalError::FileTooLarge {
+                max_bytes: 5_242_880,
+            },
             SubportalError::NoClient,
+            SubportalError::NotFound {
+                what: "test".into(),
+            },
         ];
         for err in &errors {
             let vr = err.to_varlink();
@@ -392,7 +514,9 @@ mod tests {
 
     #[test]
     fn error_to_varlink_response_not_supported() {
-        let err = SubportalError::NotSupported { capability: "OpenFile".into() };
+        let err = SubportalError::NotSupported {
+            capability: "OpenFile".into(),
+        };
         let vr = err.to_varlink();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.NotSupported"));
         let params = vr.parameters.unwrap();
@@ -401,11 +525,78 @@ mod tests {
 
     #[test]
     fn error_to_varlink_response_file_too_large() {
-        let err = SubportalError::FileTooLarge { max_bytes: 5_242_880 };
+        let err = SubportalError::FileTooLarge {
+            max_bytes: 5_242_880,
+        };
         let vr = err.to_varlink();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.FileTooLarge"));
         let params = vr.parameters.unwrap();
         assert_eq!(params["max_bytes"], 5_242_880);
+    }
+
+    #[test]
+    fn request_notify_dismiss_round_trip() {
+        let req = Request::NotifyDismiss {
+            id: "notif-123".into(),
+        };
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.NotifyDismiss");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn response_notify_delivered_to_varlink() {
+        let resp = Response::NotifyDelivered {
+            id: "notif-456".into(),
+        };
+        let vr = resp.to_varlink();
+        assert!(vr.error.is_none());
+        let params = vr.parameters.unwrap();
+        assert_eq!(params["id"], "notif-456");
+    }
+
+    #[test]
+    fn request_generate_ticket_round_trip() {
+        let req = Request::GenerateTicket { ttl: 600 };
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.GenerateTicket");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn response_ticket_to_varlink() {
+        let resp = Response::Ticket {
+            ticket_json: r#"{"endpoint_id":"abc"}"#.into(),
+        };
+        let vr = resp.to_varlink();
+        assert!(vr.error.is_none());
+        let params = vr.parameters.unwrap();
+        assert_eq!(params["ticket_json"], r#"{"endpoint_id":"abc"}"#);
+    }
+
+    #[test]
+    fn request_revoke_client_round_trip() {
+        let req = Request::RevokeClient {
+            name_or_id: "laptop".into(),
+        };
+        let vr = req.to_varlink();
+        assert_eq!(vr.method, "io.subportal.RevokeClient");
+        let back = Request::from_varlink(&vr).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn error_not_found_round_trip() {
+        let err = SubportalError::NotFound {
+            what: "no client matching 'laptop'".into(),
+        };
+        let vr = err.to_varlink();
+        assert_eq!(vr.error.as_deref(), Some("io.subportal.NotFound"));
+        let params = vr.parameters.as_ref().unwrap();
+        let back = SubportalError::from_varlink("io.subportal.NotFound", params).unwrap();
+        assert_eq!(back, err);
     }
 
     #[test]
@@ -437,6 +628,13 @@ mod tests {
         let vr = VarlinkRequest {
             method: "io.subportal.Notify".into(),
             parameters: serde_json::json!({"body": "test"}),
+        };
+        assert!(Request::from_varlink(&vr).is_err());
+
+        // NotifyDismiss missing id
+        let vr = VarlinkRequest {
+            method: "io.subportal.NotifyDismiss".into(),
+            parameters: serde_json::json!({}),
         };
         assert!(Request::from_varlink(&vr).is_err());
     }
@@ -531,10 +729,14 @@ mod tests {
             client.write_u8(NUL).await.unwrap();
             client.flush().await.unwrap();
         });
-        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        let result: anyhow::Result<VarlinkRequest> =
+            read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("maximum size"), "unexpected error: {err_msg}");
+        assert!(
+            err_msg.contains("maximum size"),
+            "unexpected error: {err_msg}"
+        );
     }
 
     #[tokio::test]
@@ -543,7 +745,8 @@ mod tests {
         // Send just a NUL byte -- empty payload
         client.write_u8(NUL).await.unwrap();
         client.flush().await.unwrap();
-        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        let result: anyhow::Result<VarlinkRequest> =
+            read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
     }
 
@@ -553,7 +756,8 @@ mod tests {
         client.write_all(b"not json at all").await.unwrap();
         client.write_u8(NUL).await.unwrap();
         client.flush().await.unwrap();
-        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        let result: anyhow::Result<VarlinkRequest> =
+            read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
     }
 
@@ -562,7 +766,8 @@ mod tests {
         let (client, server) = duplex_pair();
         // Close the client side without sending NUL
         drop(client);
-        let result: anyhow::Result<VarlinkRequest> = read_message(&mut BufReader::new(server)).await;
+        let result: anyhow::Result<VarlinkRequest> =
+            read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
     }
 }

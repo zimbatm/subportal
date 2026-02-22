@@ -1,10 +1,14 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use anyhow::Context;
 use subportal_iroh::control::{write_control, ControlMessage, FocusState};
 use tracing::warn;
+use zbus::Connection;
 
 /// Periodically send focus state updates over the control stream.
 ///
-/// Currently reports Active always. A future version could use D-Bus
-/// `org.freedesktop.ScreenSaver.GetActive()` to detect idle state.
+/// Uses D-Bus `org.freedesktop.ScreenSaver.GetActive()` to detect idle state.
+/// Falls back to `Active` if D-Bus is unavailable.
 pub async fn send_focus_updates(mut send: iroh::endpoint::SendStream) {
     // Send initial Active state
     let msg = ControlMessage::FocusUpdate {
@@ -32,11 +36,46 @@ pub async fn send_focus_updates(mut send: iroh::endpoint::SendStream) {
     }
 }
 
-/// Detect the current focus state.
+/// Whether we have already logged that ScreenSaver D-Bus is unsupported.
+static SCREENSAVER_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// Detect the current focus state via D-Bus ScreenSaver.
 ///
 /// Falls back to Active if detection fails.
 async fn detect_focus_state() -> FocusState {
-    // Try D-Bus org.freedesktop.ScreenSaver.GetActive
-    // For now, always report Active as a safe default.
-    FocusState::Active
+    match query_screensaver_active().await {
+        Ok(true) => FocusState::Idle,
+        Ok(false) => FocusState::Active,
+        Err(e) => {
+            if !SCREENSAVER_WARNED.swap(true, Ordering::Relaxed) {
+                warn!("ScreenSaver D-Bus unsupported, assuming Active: {e:#}");
+            }
+            FocusState::Active
+        }
+    }
+}
+
+/// Query `org.freedesktop.ScreenSaver.GetActive()` via D-Bus.
+///
+/// Returns `true` if the screen saver is active (i.e. screen is locked/idle).
+async fn query_screensaver_active() -> anyhow::Result<bool> {
+    let connection = Connection::session()
+        .await
+        .context("failed to connect to session D-Bus")?;
+
+    let active: bool = connection
+        .call_method(
+            Some("org.freedesktop.ScreenSaver"),
+            "/org/freedesktop/ScreenSaver",
+            Some("org.freedesktop.ScreenSaver"),
+            "GetActive",
+            &(),
+        )
+        .await
+        .context("ScreenSaver.GetActive call failed")?
+        .body()
+        .deserialize()
+        .context("failed to parse ScreenSaver.GetActive reply")?;
+
+    Ok(active)
 }

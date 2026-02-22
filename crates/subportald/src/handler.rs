@@ -7,17 +7,19 @@ use subportal_lib::consts::VERSION;
 use subportal_lib::protocol::{Request, Response, SubportalError};
 use tracing::{info, warn};
 
-use crate::portal;
+use crate::{dismiss, portal};
 
-/// V1 capabilities advertised by the daemon.
-const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify"];
+/// Capabilities advertised by the daemon.
+pub const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify"];
 
 /// Handle a parsed request and return the response or error.
 ///
 /// `host` is the originating server's hostname, if provided in the request.
+/// `notification_id` is the agent-assigned ID for dismiss tracking (fan-out only).
 pub async fn handle(
     request: Request,
     host: Option<&str>,
+    notification_id: Option<String>,
 ) -> Result<Response, SubportalError> {
     match request {
         Request::Ping => {
@@ -54,7 +56,7 @@ pub async fn handle(
             ref icon,
         } => {
             info!("notify: {title}");
-            portal::notify(
+            let dbus_id = portal::notify(
                 title,
                 body.as_deref(),
                 urgency.as_deref(),
@@ -68,7 +70,28 @@ pub async fn handle(
                     capability: "Notify".into(),
                 }
             })?;
+            if let Some(nid) = notification_id {
+                dismiss::register(nid, dbus_id);
+            }
             Ok(Response::Ok)
+        }
+        Request::NotifyDismiss { ref id } => {
+            info!("notify_dismiss: {id}");
+            Ok(Response::Ok)
+        }
+        Request::GenerateTicket { .. } => {
+            // GenerateTicket is agent-only; clients should never receive it.
+            warn!("received GenerateTicket on client daemon -- ignoring");
+            Err(SubportalError::NotSupported {
+                capability: "GenerateTicket".into(),
+            })
+        }
+        Request::RevokeClient { .. } => {
+            // RevokeClient is agent-only; clients should never receive it.
+            warn!("received RevokeClient on client daemon -- ignoring");
+            Err(SubportalError::NotSupported {
+                capability: "RevokeClient".into(),
+            })
         }
     }
 }

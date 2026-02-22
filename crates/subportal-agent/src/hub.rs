@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use iroh::endpoint::Connection;
-use iroh::EndpointId;
+use iroh::TransportAddr;
 use subportal_iroh::control::{ControlMessage, FocusState};
-use subportal_iroh::peers::ClientRegistry;
+use subportal_iroh::peers::{ClientRegistry, PendingToken};
+use subportal_iroh::ticket::Ticket;
 use subportal_lib::consts::VERSION;
 use subportal_lib::protocol::{Request, Response, SubportalError, VarlinkRequest};
 use tokio::sync::{mpsc, Mutex};
@@ -28,20 +29,27 @@ pub struct Hub {
     pub clients: HashMap<String, ConnectedClient>,
     pub registry: ClientRegistry,
     pub pending_notifications: HashMap<String, NotificationState>,
+    pub pending_tokens: Vec<PendingToken>,
+    pub endpoint: iroh::Endpoint,
+    pub hostname: String,
     notification_counter: u64,
 }
 
-/// Tracks which clients have been sent a notification.
+/// Tracks which clients have been sent a notification (used for dismiss routing).
 pub struct NotificationState {
+    #[allow(dead_code)]
     pub sent_to: Vec<String>,
 }
 
 impl Hub {
-    pub fn new(registry: ClientRegistry) -> Self {
+    pub fn new(registry: ClientRegistry, endpoint: iroh::Endpoint, hostname: String) -> Self {
         Self {
             clients: HashMap::new(),
             registry,
             pending_notifications: HashMap::new(),
+            pending_tokens: Vec::new(),
+            endpoint,
+            hostname,
             notification_counter: 0,
         }
     }
@@ -118,14 +126,14 @@ impl Hub {
                         self.broadcast_dismiss(id, None).await;
                         Ok(Response::Ok)
                     }
+                    Request::GenerateTicket { ttl } => self.generate_ticket(*ttl),
+                    Request::RevokeClient { name_or_id } => self.revoke_client(name_or_id).await,
                     _ => Ok(Response::Ok),
                 }
             }
             Strategy::PickBest(cap) => {
                 let infos = self.client_infos();
-                let best = router::pick_best(&infos, cap).ok_or_else(|| {
-                    SubportalError::NoClient
-                })?;
+                let best = router::pick_best(&infos, cap).ok_or(SubportalError::NoClient)?;
                 let endpoint_id = best.endpoint_id.clone();
                 self.send_to_client(&endpoint_id, &varlink_req).await
             }
@@ -137,15 +145,22 @@ impl Hub {
                 }
 
                 let notification_id = self.next_notification_id();
-                let sent_to: Vec<String> = targets
-                    .iter()
-                    .map(|c| c.endpoint_id.clone())
-                    .collect();
+                let sent_to: Vec<String> = targets.iter().map(|c| c.endpoint_id.clone()).collect();
+
+                // Clone the request and inject notification_id so clients
+                // can map their local D-Bus IDs back to this agent-level ID.
+                let mut fan_req = varlink_req.clone();
+                if let serde_json::Value::Object(ref mut map) = fan_req.parameters {
+                    map.insert(
+                        "notification_id".to_string(),
+                        serde_json::Value::String(notification_id.clone()),
+                    );
+                }
 
                 // Send to all targets
                 for target in &targets {
                     let eid = target.endpoint_id.clone();
-                    if let Err(e) = self.send_to_client(&eid, &varlink_req).await {
+                    if let Err(e) = self.send_to_client(&eid, &fan_req).await {
                         warn!(
                             endpoint_id = %eid,
                             "failed to fan-out to client: {e}"
@@ -153,10 +168,8 @@ impl Hub {
                     }
                 }
 
-                self.pending_notifications.insert(
-                    notification_id.clone(),
-                    NotificationState { sent_to },
-                );
+                self.pending_notifications
+                    .insert(notification_id.clone(), NotificationState { sent_to });
 
                 Ok(Response::NotifyDelivered {
                     id: notification_id,
@@ -171,7 +184,10 @@ impl Hub {
         endpoint_id: &str,
         req: &VarlinkRequest,
     ) -> Result<Response, SubportalError> {
-        let client = self.clients.get(endpoint_id).ok_or(SubportalError::NoClient)?;
+        let client = self
+            .clients
+            .get(endpoint_id)
+            .ok_or(SubportalError::NoClient)?;
 
         let (mut send, mut recv) = client
             .connection
@@ -217,16 +233,102 @@ impl Hub {
         }
     }
 
-    /// Get the number of connected clients.
-    pub fn connected_count(&self) -> usize {
-        self.clients.len()
+    /// Validate and consume a pending enrollment token.
+    /// Returns true if the token was valid and consumed.
+    pub fn consume_token(&mut self, token: &str) -> bool {
+        // Prune expired tokens
+        self.pending_tokens.retain(|t| !t.is_expired());
+        let valid = self.pending_tokens.iter().any(|t| t.token == token);
+        if valid {
+            self.pending_tokens.retain(|t| t.token != token);
+        }
+        valid
     }
+
+    /// Generate an enrollment ticket with a pending token.
+    fn generate_ticket(&mut self, ttl: u64) -> Result<Response, SubportalError> {
+        let token = PendingToken::generate(ttl);
+
+        let addr = self.endpoint.addr();
+        let endpoint_id = addr.id.to_string();
+
+        let mut addrs = Vec::new();
+        let mut relay_url = None;
+        for transport_addr in &addr.addrs {
+            match transport_addr {
+                TransportAddr::Relay(url) => {
+                    relay_url = Some(url.to_string());
+                }
+                TransportAddr::Ip(sock) => {
+                    addrs.push(sock.to_string());
+                }
+                _ => {}
+            }
+        }
+
+        let ticket = Ticket {
+            endpoint_id,
+            addrs,
+            relay_url,
+            token: token.token.clone(),
+            hostname: self.hostname.clone(),
+        };
+
+        // Store the token so it can be validated when the client connects
+        self.pending_tokens.push(token);
+
+        Ok(Response::Ticket {
+            ticket_json: ticket.to_json(),
+        })
+    }
+
+    /// Revoke an enrolled client by name or endpoint ID.
+    ///
+    /// Removes the client from the persistent registry and, if the client is
+    /// currently connected, disconnects it immediately.
+    async fn revoke_client(&mut self, name_or_id: &str) -> Result<Response, SubportalError> {
+        let removed =
+            self.registry
+                .remove(name_or_id)
+                .await
+                .map_err(|_| SubportalError::NotFound {
+                    what: format!("failed to update registry for '{name_or_id}'"),
+                })?;
+
+        if !removed {
+            return Err(SubportalError::NotFound {
+                what: format!("no client matching '{name_or_id}'"),
+            });
+        }
+
+        // Disconnect any matching connected client
+        let to_disconnect: Vec<String> = self
+            .clients
+            .values()
+            .filter(|c| c.endpoint_id == name_or_id || c.name == name_or_id)
+            .map(|c| c.endpoint_id.clone())
+            .collect();
+
+        for eid in &to_disconnect {
+            if let Some(c) = self.clients.remove(eid) {
+                info!(
+                    endpoint_id = %c.endpoint_id,
+                    name = %c.name,
+                    "revoked and disconnected client"
+                );
+                c.connection.close(0u32.into(), b"revoked");
+            }
+        }
+
+        Ok(Response::Ok)
+    }
+
 }
 
 /// Thread-safe handle to the hub.
 pub type SharedHub = Arc<Mutex<Hub>>;
 
 /// Create a new shared hub.
-pub fn shared(registry: ClientRegistry) -> SharedHub {
-    Arc::new(Mutex::new(Hub::new(registry)))
+pub fn shared(registry: ClientRegistry, endpoint: iroh::Endpoint, hostname: String) -> SharedHub {
+    Arc::new(Mutex::new(Hub::new(registry, endpoint, hostname)))
 }

@@ -79,7 +79,7 @@ impl Server {
 
         let peer = resolve_peer(&stream);
 
-        // Reject connections from different, non-root UIDs (matches OpenSSH behaviour).
+        // Reject connections from different, non-root UIDs.
         if let Some(uid) = peer.uid {
             let my_uid = unsafe { libc::getuid() };
             if uid != 0 && uid != my_uid {
@@ -88,11 +88,7 @@ impl Server {
                     server_uid = my_uid,
                     "rejecting connection: uid mismatch"
                 );
-                anyhow::bail!(
-                    "uid mismatch: peer uid {} != server uid {}",
-                    uid,
-                    my_uid
-                );
+                anyhow::bail!("uid mismatch: peer uid {} != server uid {}", uid, my_uid);
             }
         }
 

@@ -9,10 +9,10 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use ashpd::desktop::open_uri::OpenFileRequest;
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use zbus::Connection;
+use base64::Engine;
 use zbus::zvariant::Value;
+use zbus::Connection;
 
 /// Open a URI in the user's default application, showing a confirmation dialog.
 pub async fn open_uri(uri: &str) -> anyhow::Result<()> {
@@ -63,7 +63,7 @@ pub async fn notify(
     urgency: Option<&str>,
     icon: Option<&str>,
     host: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u32> {
     let connection = Connection::session()
         .await
         .context("failed to connect to session D-Bus")?;
@@ -83,21 +83,21 @@ pub async fn notify(
         None => "subportal".to_string(),
     };
 
-    let _reply_id: u32 = connection
+    let reply_id: u32 = connection
         .call_method(
             Some("org.freedesktop.Notifications"),
             "/org/freedesktop/Notifications",
             Some("org.freedesktop.Notifications"),
             "Notify",
             &(
-                app_name.as_str(),                 // app_name
-                0u32,                              // replaces_id
-                icon.unwrap_or(""),                // app_icon
-                title,                             // summary
-                body.unwrap_or(""),                // body
-                Vec::<&str>::new(),                // actions
-                &hints,                            // hints
-                -1i32,                             // expire_timeout (-1 = server default)
+                app_name.as_str(),  // app_name
+                0u32,               // replaces_id
+                icon.unwrap_or(""), // app_icon
+                title,              // summary
+                body.unwrap_or(""), // body
+                Vec::<&str>::new(), // actions
+                &hints,             // hints
+                -1i32,              // expire_timeout (-1 = server default)
             ),
         )
         .await
@@ -106,5 +106,5 @@ pub async fn notify(
         .deserialize()
         .context("failed to parse notification reply")?;
 
-    Ok(())
+    Ok(reply_id)
 }

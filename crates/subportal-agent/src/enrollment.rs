@@ -1,65 +1,40 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
-use iroh::TransportAddr;
 use subportal_iroh::consts::data_dir;
-use subportal_iroh::keypair::load_or_generate_keypair;
-use subportal_iroh::peers::{ClientEntry, ClientRegistry, PendingToken};
-use subportal_iroh::ticket::Ticket;
+use subportal_iroh::peers::{ClientEntry, ClientRegistry};
+use subportal_lib::client::Client;
+use subportal_lib::protocol::{Request, Response};
 
 /// Generate and print an enrollment ticket to stdout.
+///
+/// Connects to the running agent via its Unix socket and asks it to generate
+/// a ticket with a pending token. The token is stored in the agent's in-memory
+/// list so it can be validated when the enrolling client connects.
 pub async fn print_ticket(ttl: u64) -> Result<()> {
-    let dir = data_dir();
-    let key = load_or_generate_keypair(&dir.join(subportal_iroh::consts::KEYPAIR_FILE)).await?;
+    let client = Client::new();
+    let request = Request::GenerateTicket { ttl };
 
-    // Build an endpoint briefly to get our addresses
-    let endpoint = iroh::Endpoint::builder()
-        .secret_key(key)
-        .alpns(vec![subportal_iroh::consts::ALPN.to_vec()])
-        .bind()
-        .await
-        .context("failed to bind iroh endpoint")?;
-
-    let addr = endpoint.addr();
-    let endpoint_id = addr.id.to_string();
-
-    let mut addrs = Vec::new();
-    let mut relay_url = None;
-    for transport_addr in &addr.addrs {
-        match transport_addr {
-            TransportAddr::Relay(url) => {
-                relay_url = Some(url.to_string());
+    match client.call(&request).await {
+        Ok(Response::Ticket { ticket_json }) => {
+            println!("{ticket_json}");
+            Ok(())
+        }
+        Ok(_) => {
+            anyhow::bail!("unexpected response from agent");
+        }
+        Err(e) => {
+            let path = client.path();
+            eprintln!("Failed to generate ticket: {e}");
+            if path.exists() {
+                eprintln!("  socket: {} (exists but not responding)", path.display());
+            } else {
+                eprintln!("  socket: {} (not found)", path.display());
             }
-            TransportAddr::Ip(sock) => {
-                addrs.push(sock.to_string());
-            }
+            eprintln!();
+            eprintln!("Is the agent running? Start it with: subportal-agent run");
+            anyhow::bail!("could not connect to running agent");
         }
     }
-
-    let token = PendingToken::generate(ttl);
-
-    // Save the token so the agent can validate it later
-    // For now we store it alongside the registry
-    let mut registry = ClientRegistry::load(&dir).await?;
-    // Token is ephemeral -- it's stored in the ticket and validated by the running agent.
-    // The print_ticket command is a shortcut; in practice the running agent holds tokens
-    // in memory. We print the token so the agent's stdin/config can pick it up.
-
-    let hostname = gethostname();
-
-    let ticket = Ticket {
-        endpoint_id,
-        addrs,
-        relay_url,
-        token: token.token.clone(),
-        hostname,
-    };
-
-    // Print to stdout for piping
-    println!("{}", ticket.to_json());
-
-    endpoint.close().await;
-
-    Ok(())
 }
 
 /// List enrolled clients.
@@ -92,43 +67,49 @@ pub async fn list_clients() -> Result<()> {
 }
 
 /// Revoke an enrolled client by name or endpoint ID.
+///
+/// Connects to the running agent via its Unix socket and asks it to revoke the
+/// client. This removes the client from the persistent registry and disconnects
+/// it immediately if currently connected.
 pub async fn revoke_client(name_or_id: &str) -> Result<()> {
-    let dir = data_dir();
-    let mut registry = ClientRegistry::load(&dir).await?;
+    let client = Client::new();
+    let request = Request::RevokeClient {
+        name_or_id: name_or_id.to_string(),
+    };
 
-    if registry.remove(name_or_id).await? {
-        println!("Client '{}' revoked.", name_or_id);
-    } else {
-        anyhow::bail!("No client found matching '{}'", name_or_id);
+    match client.call(&request).await {
+        Ok(Response::Ok) => {
+            println!("Client '{}' revoked.", name_or_id);
+            Ok(())
+        }
+        Ok(_) => {
+            anyhow::bail!("unexpected response from agent");
+        }
+        Err(subportal_lib::protocol::SubportalError::NotFound { what }) => {
+            anyhow::bail!("{what}");
+        }
+        Err(e) => {
+            let path = client.path();
+            eprintln!("Failed to revoke client: {e}");
+            if path.exists() {
+                eprintln!("  socket: {} (exists but not responding)", path.display());
+            } else {
+                eprintln!("  socket: {} (not found)", path.display());
+            }
+            eprintln!();
+            eprintln!("Is the agent running? Start it with: subportal-agent run");
+            anyhow::bail!("could not connect to running agent");
+        }
     }
-
-    Ok(())
 }
 
-/// Validate a token and enroll a client.
-pub fn enroll_client(
-    endpoint_id: &str,
-    name: &str,
-    capabilities: Vec<String>,
-) -> ClientEntry {
+/// Create a ClientEntry for a newly enrolled client.
+pub fn enroll_client(endpoint_id: &str, name: &str, capabilities: Vec<String>) -> ClientEntry {
     ClientEntry {
         endpoint_id: endpoint_id.to_string(),
         name: name.to_string(),
         enrolled_at: Utc::now(),
         last_seen: Some(Utc::now()),
         capabilities,
-    }
-}
-
-fn gethostname() -> String {
-    let mut buf = [0u8; 256];
-    let ret = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
-    if ret == 0 {
-        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-        std::str::from_utf8(&buf[..end])
-            .unwrap_or("unknown")
-            .to_string()
-    } else {
-        "unknown".to_string()
     }
 }
