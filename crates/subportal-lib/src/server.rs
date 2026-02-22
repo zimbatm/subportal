@@ -12,9 +12,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tracing::{info, warn};
 
 use crate::consts::default_socket_path;
-use crate::protocol::{
-    read_message, write_message, Request, Response, SubportalError, VarlinkRequest, VarlinkResponse,
-};
+use crate::protocol::{read_message, write_message, Request, Response, SubportalError};
 
 /// Information about the peer process that connected.
 #[derive(Debug, Clone, Default)]
@@ -92,12 +90,12 @@ impl Server {
             }
         }
 
-        let varlink_req: VarlinkRequest = read_message(&mut BufReader::new(&mut stream)).await?;
+        let value: serde_json::Value = read_message(&mut BufReader::new(&mut stream)).await?;
 
         // Extract the optional host identifier before dispatching the request.
-        let host = varlink_req
-            .parameters
-            .get("host")
+        let host = value
+            .get("parameters")
+            .and_then(|p| p.get("host"))
             .and_then(|v| v.as_str())
             .map(String::from);
 
@@ -107,7 +105,7 @@ impl Server {
             info!("connection from pid {:?}", peer.pid);
         }
 
-        let request = Request::from_varlink(&varlink_req)?;
+        let request: Request = serde_json::from_value(value)?;
 
         Ok((request, host, Responder { stream, peer }))
     }
@@ -123,14 +121,14 @@ impl Drop for Server {
 impl Responder {
     /// Send a successful response.
     pub async fn send_ok(mut self, response: Response) -> anyhow::Result<()> {
-        let varlink_resp = response.to_varlink();
-        write_message(&mut self.stream, &varlink_resp).await
+        let wire_resp = response.to_wire();
+        write_message(&mut self.stream, &wire_resp).await
     }
 
     /// Send an error response.
     pub async fn send_error(mut self, error: SubportalError) -> anyhow::Result<()> {
-        let varlink_resp: VarlinkResponse = error.to_varlink();
-        write_message(&mut self.stream, &varlink_resp).await
+        let wire_resp = error.to_wire();
+        write_message(&mut self.stream, &wire_resp).await
     }
 }
 

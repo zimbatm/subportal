@@ -1,9 +1,9 @@
 //! Varlink protocol types and wire I/O.
 //!
 //! This module defines the typed request/response enums ([`Request`],
-//! [`Response`]), the corresponding Varlink wire types ([`VarlinkRequest`],
-//! [`VarlinkResponse`]), domain errors ([`SubportalError`]), and async
-//! functions for reading/writing NUL-delimited JSON messages.
+//! [`Response`]), the wire response type ([`WireResponse`]), domain errors
+//! ([`SubportalError`]), and async functions for reading/writing NUL-delimited
+//! JSON messages.
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -17,17 +17,9 @@ const NUL: u8 = 0;
 // Wire-level types (Varlink JSON framing)
 // ---------------------------------------------------------------------------
 
-/// A raw Varlink request as it appears on the wire.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VarlinkRequest {
-    pub method: String,
-    #[serde(default)]
-    pub parameters: serde_json::Value,
-}
-
 /// A raw Varlink response as it appears on the wire.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct VarlinkResponse {
+pub struct WireResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,19 +31,24 @@ pub struct VarlinkResponse {
 // ---------------------------------------------------------------------------
 
 /// A typed subportal request.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "method", content = "parameters")]
 pub enum Request {
     /// Check connectivity and discover the daemon's capabilities.
-    Ping,
+    #[serde(rename = "io.subportal.Ping")]
+    Ping {},
     /// Open a URI in the client's default application.
+    #[serde(rename = "io.subportal.OpenURI")]
     OpenURI { uri: String },
     /// Transfer a file (base64-encoded) and open it on the client.
+    #[serde(rename = "io.subportal.OpenFile")]
     OpenFile {
         name: String,
         mime: String,
         content: String,
     },
     /// Show a desktop notification on the client.
+    #[serde(rename = "io.subportal.Notify")]
     Notify {
         title: String,
         body: Option<String>,
@@ -59,10 +56,13 @@ pub enum Request {
         icon: Option<String>,
     },
     /// Dismiss a notification by its ID across all connected devices.
+    #[serde(rename = "io.subportal.NotifyDismiss")]
     NotifyDismiss { id: String },
     /// Generate an enrollment ticket (agent-only, via Unix socket).
+    #[serde(rename = "io.subportal.GenerateTicket")]
     GenerateTicket { ttl: u64 },
     /// Revoke an enrolled client by name or endpoint ID (agent-only, via Unix socket).
+    #[serde(rename = "io.subportal.RevokeClient")]
     RevokeClient { name_or_id: String },
 }
 
@@ -102,7 +102,7 @@ pub enum SubportalError {
 }
 
 impl SubportalError {
-    pub fn varlink_id(&self) -> &'static str {
+    pub fn wire_id(&self) -> &'static str {
         match self {
             Self::UserDenied => "io.subportal.UserDenied",
             Self::NotSupported { .. } => "io.subportal.NotSupported",
@@ -112,7 +112,7 @@ impl SubportalError {
         }
     }
 
-    pub fn from_varlink(id: &str, parameters: &serde_json::Value) -> Option<Self> {
+    pub fn from_wire(id: &str, parameters: &serde_json::Value) -> Option<Self> {
         match id {
             "io.subportal.UserDenied" => Some(Self::UserDenied),
             "io.subportal.NotSupported" => {
@@ -145,175 +145,31 @@ impl SubportalError {
 }
 
 // ---------------------------------------------------------------------------
-// Conversion: typed ↔ wire
+// Conversion: typed → wire
 // ---------------------------------------------------------------------------
 
-impl Request {
-    pub fn to_varlink(&self) -> VarlinkRequest {
-        match self {
-            Request::Ping => VarlinkRequest {
-                method: "io.subportal.Ping".into(),
-                parameters: serde_json::Value::Object(Default::default()),
-            },
-            Request::OpenURI { uri } => VarlinkRequest {
-                method: "io.subportal.OpenURI".into(),
-                parameters: serde_json::json!({ "uri": uri }),
-            },
-            Request::OpenFile {
-                name,
-                mime,
-                content,
-            } => VarlinkRequest {
-                method: "io.subportal.OpenFile".into(),
-                parameters: serde_json::json!({
-                    "name": name,
-                    "mime": mime,
-                    "content": content,
-                }),
-            },
-            Request::Notify {
-                title,
-                body,
-                urgency,
-                icon,
-            } => VarlinkRequest {
-                method: "io.subportal.Notify".into(),
-                parameters: serde_json::json!({
-                    "title": title,
-                    "body": body,
-                    "urgency": urgency,
-                    "icon": icon,
-                }),
-            },
-            Request::NotifyDismiss { id } => VarlinkRequest {
-                method: "io.subportal.NotifyDismiss".into(),
-                parameters: serde_json::json!({ "id": id }),
-            },
-            Request::GenerateTicket { ttl } => VarlinkRequest {
-                method: "io.subportal.GenerateTicket".into(),
-                parameters: serde_json::json!({ "ttl": ttl }),
-            },
-            Request::RevokeClient { ref name_or_id } => VarlinkRequest {
-                method: "io.subportal.RevokeClient".into(),
-                parameters: serde_json::json!({ "name_or_id": name_or_id }),
-            },
-        }
-    }
-
-    pub fn from_varlink(vr: &VarlinkRequest) -> anyhow::Result<Self> {
-        match vr.method.as_str() {
-            "io.subportal.Ping" => Ok(Request::Ping),
-            "io.subportal.OpenURI" => {
-                let uri = vr
-                    .parameters
-                    .get("uri")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'uri' parameter"))?
-                    .to_string();
-                Ok(Request::OpenURI { uri })
-            }
-            "io.subportal.OpenFile" => {
-                let params = &vr.parameters;
-                let name = params
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'name' parameter"))?
-                    .to_string();
-                let mime = params
-                    .get("mime")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'mime' parameter"))?
-                    .to_string();
-                let content = params
-                    .get("content")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'content' parameter"))?
-                    .to_string();
-                Ok(Request::OpenFile {
-                    name,
-                    mime,
-                    content,
-                })
-            }
-            "io.subportal.Notify" => {
-                let params = &vr.parameters;
-                let title = params
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'title' parameter"))?
-                    .to_string();
-                let body = params
-                    .get("body")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let urgency = params
-                    .get("urgency")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let icon = params
-                    .get("icon")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                Ok(Request::Notify {
-                    title,
-                    body,
-                    urgency,
-                    icon,
-                })
-            }
-            "io.subportal.NotifyDismiss" => {
-                let id = vr
-                    .parameters
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'id' parameter"))?
-                    .to_string();
-                Ok(Request::NotifyDismiss { id })
-            }
-            "io.subportal.GenerateTicket" => {
-                let ttl = vr
-                    .parameters
-                    .get("ttl")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'ttl' parameter"))?;
-                Ok(Request::GenerateTicket { ttl })
-            }
-            "io.subportal.RevokeClient" => {
-                let name_or_id = vr
-                    .parameters
-                    .get("name_or_id")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("missing 'name_or_id' parameter"))?
-                    .to_string();
-                Ok(Request::RevokeClient { name_or_id })
-            }
-            other => anyhow::bail!("unknown method: {other}"),
-        }
-    }
-}
-
 impl Response {
-    pub fn to_varlink(&self) -> VarlinkResponse {
+    pub fn to_wire(&self) -> WireResponse {
         match self {
             Response::Ping {
                 capabilities,
                 version,
-            } => VarlinkResponse {
+            } => WireResponse {
                 parameters: Some(serde_json::json!({
                     "capabilities": capabilities,
                     "version": version,
                 })),
                 error: None,
             },
-            Response::Ok => VarlinkResponse {
+            Response::Ok => WireResponse {
                 parameters: Some(serde_json::Value::Object(Default::default())),
                 error: None,
             },
-            Response::NotifyDelivered { id } => VarlinkResponse {
+            Response::NotifyDelivered { id } => WireResponse {
                 parameters: Some(serde_json::json!({ "id": id })),
                 error: None,
             },
-            Response::Ticket { ref ticket_json } => VarlinkResponse {
+            Response::Ticket { ref ticket_json } => WireResponse {
                 parameters: Some(serde_json::json!({ "ticket_json": ticket_json })),
                 error: None,
             },
@@ -322,7 +178,7 @@ impl Response {
 }
 
 impl SubportalError {
-    pub fn to_varlink(&self) -> VarlinkResponse {
+    pub fn to_wire(&self) -> WireResponse {
         let parameters = match self {
             Self::NotSupported { capability } => {
                 serde_json::json!({ "capability": capability })
@@ -335,9 +191,9 @@ impl SubportalError {
             }
             _ => serde_json::Value::Object(Default::default()),
         };
-        VarlinkResponse {
+        WireResponse {
             parameters: Some(parameters),
-            error: Some(self.varlink_id().to_string()),
+            error: Some(self.wire_id().to_string()),
         }
     }
 }
@@ -390,72 +246,146 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn request_ping_round_trip() {
-        let req = Request::Ping;
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.Ping");
-        let back = Request::from_varlink(&vr).unwrap();
-        assert_eq!(back, Request::Ping);
+    fn request_ping_serde_round_trip() {
+        let req = Request::Ping {};
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.Ping");
+        let back: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(back, Request::Ping {});
     }
 
     #[test]
-    fn request_open_uri_round_trip() {
+    fn request_open_uri_serde_round_trip() {
         let req = Request::OpenURI {
             uri: "https://example.com".into(),
         };
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.OpenURI");
-        let back = Request::from_varlink(&vr).unwrap();
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.OpenURI");
+        assert_eq!(json["parameters"]["uri"], "https://example.com");
+        let back: Request = serde_json::from_value(json).unwrap();
         assert_eq!(back, req);
     }
 
     #[test]
-    fn request_open_file_round_trip() {
+    fn request_open_file_serde_round_trip() {
         let req = Request::OpenFile {
             name: "test.txt".into(),
             mime: "text/plain".into(),
             content: "aGVsbG8=".into(),
         };
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.OpenFile");
-        let back = Request::from_varlink(&vr).unwrap();
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.OpenFile");
+        let back: Request = serde_json::from_value(json).unwrap();
         assert_eq!(back, req);
     }
 
     #[test]
-    fn request_notify_round_trip_full() {
+    fn request_notify_serde_round_trip_full() {
         let req = Request::Notify {
             title: "Alert".into(),
             body: Some("Something happened".into()),
             urgency: Some("critical".into()),
             icon: Some("dialog-warning".into()),
         };
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.Notify");
-        let back = Request::from_varlink(&vr).unwrap();
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.Notify");
+        let back: Request = serde_json::from_value(json).unwrap();
         assert_eq!(back, req);
     }
 
     #[test]
-    fn request_notify_round_trip_minimal() {
+    fn request_notify_serde_round_trip_minimal() {
         let req = Request::Notify {
             title: "Hello".into(),
             body: None,
             urgency: None,
             icon: None,
         };
-        let vr = req.to_varlink();
-        let back = Request::from_varlink(&vr).unwrap();
+        let json = serde_json::to_value(&req).unwrap();
+        let back: Request = serde_json::from_value(json).unwrap();
         assert_eq!(back, req);
     }
 
     #[test]
-    fn response_ping_to_varlink() {
+    fn request_notify_dismiss_serde_round_trip() {
+        let req = Request::NotifyDismiss {
+            id: "notif-123".into(),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.NotifyDismiss");
+        let back: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_generate_ticket_serde_round_trip() {
+        let req = Request::GenerateTicket { ttl: 600 };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.GenerateTicket");
+        let back: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_revoke_client_serde_round_trip() {
+        let req = Request::RevokeClient {
+            name_or_id: "laptop".into(),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.RevokeClient");
+        let back: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_ignores_unknown_fields_in_parameters() {
+        // Extra fields like "host" and "notification_id" should be silently ignored.
+        let json = serde_json::json!({
+            "method": "io.subportal.OpenURI",
+            "parameters": { "uri": "https://example.com", "host": "myhost" }
+        });
+        let req: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            req,
+            Request::OpenURI {
+                uri: "https://example.com".into()
+            }
+        );
+    }
+
+    #[test]
+    fn request_unknown_method_fails() {
+        let json = serde_json::json!({
+            "method": "io.subportal.Unknown",
+            "parameters": {}
+        });
+        assert!(serde_json::from_value::<Request>(json).is_err());
+    }
+
+    #[test]
+    fn request_missing_params_fails() {
+        // OpenURI missing uri
+        let json = serde_json::json!({
+            "method": "io.subportal.OpenURI",
+            "parameters": {}
+        });
+        assert!(serde_json::from_value::<Request>(json).is_err());
+
+        // Notify missing title
+        let json = serde_json::json!({
+            "method": "io.subportal.Notify",
+            "parameters": { "body": "test" }
+        });
+        assert!(serde_json::from_value::<Request>(json).is_err());
+    }
+
+    #[test]
+    fn response_ping_to_wire() {
         let resp = Response::Ping {
             capabilities: vec!["open_uri".into(), "notify".into()],
             version: "0.1.0".into(),
         };
-        let vr = resp.to_varlink();
+        let vr = resp.to_wire();
         let params = vr.parameters.unwrap();
         assert!(vr.error.is_none());
         assert_eq!(params["version"], "0.1.0");
@@ -466,16 +396,38 @@ mod tests {
     }
 
     #[test]
-    fn response_ok_to_varlink() {
+    fn response_ok_to_wire() {
         let resp = Response::Ok;
-        let vr = resp.to_varlink();
+        let vr = resp.to_wire();
         assert!(vr.error.is_none());
         let params = vr.parameters.unwrap();
         assert!(params.as_object().unwrap().is_empty());
     }
 
     #[test]
-    fn error_varlink_round_trip() {
+    fn response_notify_delivered_to_wire() {
+        let resp = Response::NotifyDelivered {
+            id: "notif-456".into(),
+        };
+        let vr = resp.to_wire();
+        assert!(vr.error.is_none());
+        let params = vr.parameters.unwrap();
+        assert_eq!(params["id"], "notif-456");
+    }
+
+    #[test]
+    fn response_ticket_to_wire() {
+        let resp = Response::Ticket {
+            ticket_json: r#"{"endpoint_id":"abc"}"#.into(),
+        };
+        let vr = resp.to_wire();
+        assert!(vr.error.is_none());
+        let params = vr.parameters.unwrap();
+        assert_eq!(params["ticket_json"], r#"{"endpoint_id":"abc"}"#);
+    }
+
+    #[test]
+    fn error_wire_round_trip() {
         let errors = [
             SubportalError::UserDenied,
             SubportalError::NotSupported {
@@ -490,9 +442,9 @@ mod tests {
             },
         ];
         for err in &errors {
-            let vr = err.to_varlink();
+            let vr = err.to_wire();
             let params = vr.parameters.as_ref().unwrap();
-            let back = SubportalError::from_varlink(vr.error.as_deref().unwrap(), params).unwrap();
+            let back = SubportalError::from_wire(vr.error.as_deref().unwrap(), params).unwrap();
             assert_eq!(&back, err);
         }
     }
@@ -500,91 +452,38 @@ mod tests {
     #[test]
     fn error_unknown_id_returns_none() {
         let empty = serde_json::Value::Object(Default::default());
-        assert!(SubportalError::from_varlink("io.subportal.DoesNotExist", &empty).is_none());
-        assert!(SubportalError::from_varlink("", &empty).is_none());
+        assert!(SubportalError::from_wire("io.subportal.DoesNotExist", &empty).is_none());
+        assert!(SubportalError::from_wire("", &empty).is_none());
     }
 
     #[test]
-    fn error_to_varlink_response_user_denied() {
+    fn error_to_wire_response_user_denied() {
         let err = SubportalError::UserDenied;
-        let vr = err.to_varlink();
+        let vr = err.to_wire();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.UserDenied"));
         assert!(vr.parameters.unwrap().as_object().unwrap().is_empty());
     }
 
     #[test]
-    fn error_to_varlink_response_not_supported() {
+    fn error_to_wire_response_not_supported() {
         let err = SubportalError::NotSupported {
             capability: "OpenFile".into(),
         };
-        let vr = err.to_varlink();
+        let vr = err.to_wire();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.NotSupported"));
         let params = vr.parameters.unwrap();
         assert_eq!(params["capability"], "OpenFile");
     }
 
     #[test]
-    fn error_to_varlink_response_file_too_large() {
+    fn error_to_wire_response_file_too_large() {
         let err = SubportalError::FileTooLarge {
             max_bytes: 5_242_880,
         };
-        let vr = err.to_varlink();
+        let vr = err.to_wire();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.FileTooLarge"));
         let params = vr.parameters.unwrap();
         assert_eq!(params["max_bytes"], 5_242_880);
-    }
-
-    #[test]
-    fn request_notify_dismiss_round_trip() {
-        let req = Request::NotifyDismiss {
-            id: "notif-123".into(),
-        };
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.NotifyDismiss");
-        let back = Request::from_varlink(&vr).unwrap();
-        assert_eq!(back, req);
-    }
-
-    #[test]
-    fn response_notify_delivered_to_varlink() {
-        let resp = Response::NotifyDelivered {
-            id: "notif-456".into(),
-        };
-        let vr = resp.to_varlink();
-        assert!(vr.error.is_none());
-        let params = vr.parameters.unwrap();
-        assert_eq!(params["id"], "notif-456");
-    }
-
-    #[test]
-    fn request_generate_ticket_round_trip() {
-        let req = Request::GenerateTicket { ttl: 600 };
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.GenerateTicket");
-        let back = Request::from_varlink(&vr).unwrap();
-        assert_eq!(back, req);
-    }
-
-    #[test]
-    fn response_ticket_to_varlink() {
-        let resp = Response::Ticket {
-            ticket_json: r#"{"endpoint_id":"abc"}"#.into(),
-        };
-        let vr = resp.to_varlink();
-        assert!(vr.error.is_none());
-        let params = vr.parameters.unwrap();
-        assert_eq!(params["ticket_json"], r#"{"endpoint_id":"abc"}"#);
-    }
-
-    #[test]
-    fn request_revoke_client_round_trip() {
-        let req = Request::RevokeClient {
-            name_or_id: "laptop".into(),
-        };
-        let vr = req.to_varlink();
-        assert_eq!(vr.method, "io.subportal.RevokeClient");
-        let back = Request::from_varlink(&vr).unwrap();
-        assert_eq!(back, req);
     }
 
     #[test]
@@ -592,76 +491,16 @@ mod tests {
         let err = SubportalError::NotFound {
             what: "no client matching 'laptop'".into(),
         };
-        let vr = err.to_varlink();
+        let vr = err.to_wire();
         assert_eq!(vr.error.as_deref(), Some("io.subportal.NotFound"));
         let params = vr.parameters.as_ref().unwrap();
-        let back = SubportalError::from_varlink("io.subportal.NotFound", params).unwrap();
+        let back = SubportalError::from_wire("io.subportal.NotFound", params).unwrap();
         assert_eq!(back, err);
     }
 
     #[test]
-    fn from_varlink_unknown_method() {
-        let vr = VarlinkRequest {
-            method: "io.subportal.Unknown".into(),
-            parameters: serde_json::Value::Object(Default::default()),
-        };
-        assert!(Request::from_varlink(&vr).is_err());
-    }
-
-    #[test]
-    fn from_varlink_missing_params() {
-        // OpenURI missing uri
-        let vr = VarlinkRequest {
-            method: "io.subportal.OpenURI".into(),
-            parameters: serde_json::json!({}),
-        };
-        assert!(Request::from_varlink(&vr).is_err());
-
-        // OpenFile missing name
-        let vr = VarlinkRequest {
-            method: "io.subportal.OpenFile".into(),
-            parameters: serde_json::json!({"mime": "text/plain", "content": "abc"}),
-        };
-        assert!(Request::from_varlink(&vr).is_err());
-
-        // Notify missing title
-        let vr = VarlinkRequest {
-            method: "io.subportal.Notify".into(),
-            parameters: serde_json::json!({"body": "test"}),
-        };
-        assert!(Request::from_varlink(&vr).is_err());
-
-        // NotifyDismiss missing id
-        let vr = VarlinkRequest {
-            method: "io.subportal.NotifyDismiss".into(),
-            parameters: serde_json::json!({}),
-        };
-        assert!(Request::from_varlink(&vr).is_err());
-    }
-
-    #[test]
-    fn varlink_request_json_round_trip() {
-        let vr = VarlinkRequest {
-            method: "io.subportal.OpenURI".into(),
-            parameters: serde_json::json!({"uri": "https://example.com"}),
-        };
-        let json = serde_json::to_string(&vr).unwrap();
-        let back: VarlinkRequest = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.method, vr.method);
-        assert_eq!(back.parameters, vr.parameters);
-    }
-
-    #[test]
-    fn varlink_request_default_params() {
-        let json = r#"{"method":"io.subportal.Ping"}"#;
-        let vr: VarlinkRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(vr.method, "io.subportal.Ping");
-        assert!(vr.parameters.is_null());
-    }
-
-    #[test]
-    fn varlink_response_skips_none() {
-        let vr = VarlinkResponse {
+    fn wire_response_skips_none() {
+        let vr = WireResponse {
             parameters: None,
             error: None,
         };
@@ -680,24 +519,21 @@ mod tests {
     #[tokio::test]
     async fn wire_round_trip_request() {
         let (mut client, server) = duplex_pair();
-        let req = VarlinkRequest {
-            method: "io.subportal.Ping".into(),
-            parameters: serde_json::Value::Object(Default::default()),
-        };
+        let req = Request::Ping {};
         write_message(&mut client, &req).await.unwrap();
-        let back: VarlinkRequest = read_message(&mut BufReader::new(server)).await.unwrap();
-        assert_eq!(back.method, "io.subportal.Ping");
+        let back: Request = read_message(&mut BufReader::new(server)).await.unwrap();
+        assert_eq!(back, Request::Ping {});
     }
 
     #[tokio::test]
     async fn wire_round_trip_response() {
         let (client, mut server) = duplex_pair();
-        let resp = VarlinkResponse {
+        let resp = WireResponse {
             parameters: Some(serde_json::json!({"version": "0.1.0"})),
             error: None,
         };
         write_message(&mut server, &resp).await.unwrap();
-        let back: VarlinkResponse = read_message(&mut BufReader::new(client)).await.unwrap();
+        let back: WireResponse = read_message(&mut BufReader::new(client)).await.unwrap();
         assert_eq!(back.parameters.unwrap()["version"], "0.1.0");
         assert!(back.error.is_none());
     }
@@ -705,17 +541,20 @@ mod tests {
     #[tokio::test]
     async fn wire_multiple_messages() {
         let (mut client, server) = duplex_pair();
-        for i in 0..3 {
-            let req = VarlinkRequest {
-                method: format!("io.subportal.Test{i}"),
-                parameters: serde_json::Value::Object(Default::default()),
-            };
-            write_message(&mut client, &req).await.unwrap();
+        let requests = [
+            Request::Ping {},
+            Request::OpenURI {
+                uri: "https://a.com".into(),
+            },
+            Request::NotifyDismiss { id: "n1".into() },
+        ];
+        for req in &requests {
+            write_message(&mut client, req).await.unwrap();
         }
         let mut reader = BufReader::new(server);
-        for i in 0..3 {
-            let back: VarlinkRequest = read_message(&mut reader).await.unwrap();
-            assert_eq!(back.method, format!("io.subportal.Test{i}"));
+        for expected in &requests {
+            let back: Request = read_message(&mut reader).await.unwrap();
+            assert_eq!(&back, expected);
         }
     }
 
@@ -729,7 +568,7 @@ mod tests {
             client.write_u8(NUL).await.unwrap();
             client.flush().await.unwrap();
         });
-        let result: anyhow::Result<VarlinkRequest> =
+        let result: anyhow::Result<serde_json::Value> =
             read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -745,7 +584,7 @@ mod tests {
         // Send just a NUL byte -- empty payload
         client.write_u8(NUL).await.unwrap();
         client.flush().await.unwrap();
-        let result: anyhow::Result<VarlinkRequest> =
+        let result: anyhow::Result<serde_json::Value> =
             read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
     }
@@ -756,7 +595,7 @@ mod tests {
         client.write_all(b"not json at all").await.unwrap();
         client.write_u8(NUL).await.unwrap();
         client.flush().await.unwrap();
-        let result: anyhow::Result<VarlinkRequest> =
+        let result: anyhow::Result<serde_json::Value> =
             read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
     }
@@ -766,7 +605,7 @@ mod tests {
         let (client, server) = duplex_pair();
         // Close the client side without sending NUL
         drop(client);
-        let result: anyhow::Result<VarlinkRequest> =
+        let result: anyhow::Result<serde_json::Value> =
             read_message(&mut BufReader::new(server)).await;
         assert!(result.is_err());
     }

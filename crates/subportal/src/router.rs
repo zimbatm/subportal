@@ -1,4 +1,5 @@
 use subportal_iroh::control::FocusState;
+use subportal_lib::protocol::Request;
 
 /// Metadata about a connected client, used for routing decisions.
 pub struct ClientInfo {
@@ -17,16 +18,12 @@ pub enum Strategy {
     Direct,
 }
 
-/// Determine the routing strategy for a request type method name.
-pub fn strategy_for(method: &str) -> Strategy {
-    match method {
-        "io.subportal.OpenURI" => Strategy::PickBest("OpenURI"),
-        "io.subportal.OpenFile" => Strategy::PickBest("OpenFile"),
-        "io.subportal.Notify" => Strategy::FanOut("Notify"),
-        "io.subportal.Ping" => Strategy::Direct,
-        "io.subportal.NotifyDismiss" => Strategy::Direct,
-        "io.subportal.GenerateTicket" => Strategy::Direct,
-        "io.subportal.RevokeClient" => Strategy::Direct,
+/// Determine the routing strategy for a request.
+pub fn strategy_for(request: &Request) -> Strategy {
+    match request {
+        Request::OpenURI { .. } => Strategy::PickBest("OpenURI"),
+        Request::OpenFile { .. } => Strategy::PickBest("OpenFile"),
+        Request::Notify { .. } => Strategy::FanOut("Notify"),
         _ => Strategy::Direct,
     }
 }
@@ -111,17 +108,24 @@ mod tests {
     }
 
     #[test]
-    fn strategy_for_methods() {
+    fn strategy_for_requests() {
         assert!(matches!(
-            strategy_for("io.subportal.OpenURI"),
+            strategy_for(&Request::OpenURI {
+                uri: "x".into()
+            }),
             Strategy::PickBest("OpenURI")
         ));
         assert!(matches!(
-            strategy_for("io.subportal.Notify"),
+            strategy_for(&Request::Notify {
+                title: "x".into(),
+                body: None,
+                urgency: None,
+                icon: None,
+            }),
             Strategy::FanOut("Notify")
         ));
         assert!(matches!(
-            strategy_for("io.subportal.Ping"),
+            strategy_for(&Request::Ping {}),
             Strategy::Direct
         ));
     }

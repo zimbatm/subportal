@@ -215,27 +215,27 @@ async fn handle_request_stream(
     mut recv: iroh::endpoint::RecvStream,
     host: &str,
 ) -> Result<()> {
-    let req = transport::recv_request(&mut recv).await?;
+    let value: serde_json::Value = transport::recv_request(&mut recv).await?;
 
     // Extract notification_id from raw parameters before parsing into typed Request.
-    let notification_id = req
-        .parameters
-        .get("notification_id")
+    let notification_id = value
+        .get("parameters")
+        .and_then(|p| p.get("notification_id"))
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let request = Request::from_varlink(&req)?;
+    let request: Request = serde_json::from_value(value)?;
 
     info!("request from {host}: {request:?}");
 
     match handler::handle(request, Some(host), notification_id).await {
         Ok(response) => {
-            let varlink_resp = response.to_varlink();
-            transport::send_response(&mut send, &varlink_resp).await?;
+            let wire_resp = response.to_wire();
+            transport::send_response(&mut send, &wire_resp).await?;
         }
         Err(e) => {
-            let varlink_resp = e.to_varlink();
-            transport::send_response(&mut send, &varlink_resp).await?;
+            let wire_resp = e.to_wire();
+            transport::send_response(&mut send, &wire_resp).await?;
         }
     }
 

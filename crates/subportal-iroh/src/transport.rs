@@ -5,11 +5,12 @@
 
 use anyhow::Context;
 use iroh::endpoint::{RecvStream, SendStream};
-use subportal_lib::protocol::{read_message, write_message, VarlinkRequest, VarlinkResponse};
+use serde::{de::DeserializeOwned, Serialize};
+use subportal_lib::protocol::{read_message, write_message};
 use tokio::io::BufReader;
 
-/// Send a Varlink request over a QUIC send stream and finish it.
-pub async fn send_request(send: &mut SendStream, req: &VarlinkRequest) -> anyhow::Result<()> {
+/// Send a request over a QUIC send stream and finish it.
+pub async fn send_request(send: &mut SendStream, req: &impl Serialize) -> anyhow::Result<()> {
     write_message(send, req)
         .await
         .context("failed to send request")?;
@@ -17,16 +18,16 @@ pub async fn send_request(send: &mut SendStream, req: &VarlinkRequest) -> anyhow
     Ok(())
 }
 
-/// Receive a Varlink request from a QUIC recv stream.
-pub async fn recv_request(recv: &mut RecvStream) -> anyhow::Result<VarlinkRequest> {
+/// Receive a request from a QUIC recv stream.
+pub async fn recv_request<T: DeserializeOwned>(recv: &mut RecvStream) -> anyhow::Result<T> {
     let mut reader = BufReader::new(recv);
     read_message(&mut reader)
         .await
         .context("failed to receive request")
 }
 
-/// Send a Varlink response over a QUIC send stream and finish it.
-pub async fn send_response(send: &mut SendStream, resp: &VarlinkResponse) -> anyhow::Result<()> {
+/// Send a response over a QUIC send stream and finish it.
+pub async fn send_response(send: &mut SendStream, resp: &impl Serialize) -> anyhow::Result<()> {
     write_message(send, resp)
         .await
         .context("failed to send response")?;
@@ -34,8 +35,8 @@ pub async fn send_response(send: &mut SendStream, resp: &VarlinkResponse) -> any
     Ok(())
 }
 
-/// Receive a Varlink response from a QUIC recv stream.
-pub async fn recv_response(recv: &mut RecvStream) -> anyhow::Result<VarlinkResponse> {
+/// Receive a response from a QUIC recv stream.
+pub async fn recv_response<T: DeserializeOwned>(recv: &mut RecvStream) -> anyhow::Result<T> {
     let mut reader = BufReader::new(recv);
     read_message(&mut reader)
         .await

@@ -22,7 +22,7 @@ pub async fn handle(
     notification_id: Option<String>,
 ) -> Result<Response, SubportalError> {
     match request {
-        Request::Ping => {
+        Request::Ping {} => {
             info!("ping");
             Ok(Response::Ping {
                 capabilities: CAPABILITIES.iter().map(|s| (*s).to_string()).collect(),

@@ -7,7 +7,7 @@ use subportal_iroh::control::{ControlMessage, FocusState};
 use subportal_iroh::peers::{ClientRegistry, PendingToken};
 use subportal_iroh::ticket::Ticket;
 use subportal_lib::consts::VERSION;
-use subportal_lib::protocol::{Request, Response, SubportalError, VarlinkRequest};
+use subportal_lib::protocol::{Request, Response, SubportalError, WireResponse};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{info, warn};
 
@@ -102,14 +102,13 @@ impl Hub {
 
     /// Route a request to the appropriate client(s) and return the response.
     pub async fn route_request(&mut self, request: &Request) -> Result<Response, SubportalError> {
-        let varlink_req = request.to_varlink();
-        let strategy = router::strategy_for(&varlink_req.method);
+        let strategy = router::strategy_for(request);
 
         match strategy {
             Strategy::Direct => {
                 // Agent responds directly
                 match request {
-                    Request::Ping => {
+                    Request::Ping {} => {
                         let mut all_caps: Vec<String> = self
                             .clients
                             .values()
@@ -135,7 +134,9 @@ impl Hub {
                 let infos = self.client_infos();
                 let best = router::pick_best(&infos, cap).ok_or(SubportalError::NoClient)?;
                 let endpoint_id = best.endpoint_id.clone();
-                self.send_to_client(&endpoint_id, &varlink_req).await
+                let value =
+                    serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+                self.send_to_client(&endpoint_id, &value).await
             }
             Strategy::FanOut(cap) => {
                 let infos = self.client_infos();
@@ -147,12 +148,15 @@ impl Hub {
                 let notification_id = self.next_notification_id();
                 let sent_to: Vec<String> = targets.iter().map(|c| c.endpoint_id.clone()).collect();
 
-                // Clone the request and inject notification_id so clients
+                // Serialize the request and inject notification_id so clients
                 // can map their local D-Bus IDs back to this agent-level ID.
-                let mut fan_req = varlink_req.clone();
-                if let serde_json::Value::Object(ref mut map) = fan_req.parameters {
-                    map.insert(
-                        "notification_id".to_string(),
+                let mut value =
+                    serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+                if let Some(params) =
+                    value.get_mut("parameters").and_then(|v| v.as_object_mut())
+                {
+                    params.insert(
+                        "notification_id".into(),
                         serde_json::Value::String(notification_id.clone()),
                     );
                 }
@@ -160,7 +164,7 @@ impl Hub {
                 // Send to all targets
                 for target in &targets {
                     let eid = target.endpoint_id.clone();
-                    if let Err(e) = self.send_to_client(&eid, &fan_req).await {
+                    if let Err(e) = self.send_to_client(&eid, &value).await {
                         warn!(
                             endpoint_id = %eid,
                             "failed to fan-out to client: {e}"
@@ -178,11 +182,11 @@ impl Hub {
         }
     }
 
-    /// Send a Varlink request to a specific connected client via a new QUIC bi-stream.
+    /// Send a request to a specific connected client via a new QUIC bi-stream.
     async fn send_to_client(
         &self,
         endpoint_id: &str,
-        req: &VarlinkRequest,
+        req: &serde_json::Value,
     ) -> Result<Response, SubportalError> {
         let client = self
             .clients
@@ -199,7 +203,7 @@ impl Hub {
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
-        let resp = subportal_iroh::transport::recv_response(&mut recv)
+        let resp: WireResponse = subportal_iroh::transport::recv_response(&mut recv)
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
@@ -210,7 +214,7 @@ impl Hub {
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
-            if let Some(e) = SubportalError::from_varlink(err_id, &params) {
+            if let Some(e) = SubportalError::from_wire(err_id, &params) {
                 return Err(e);
             }
         }

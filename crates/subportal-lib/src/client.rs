@@ -13,9 +13,7 @@ use tokio::io::BufReader;
 use tokio::net::UnixStream;
 
 use crate::consts::{default_socket_path, SOCKET_PATH_ENV};
-use crate::protocol::{
-    read_message, write_message, Request, Response, SubportalError, VarlinkResponse,
-};
+use crate::protocol::{read_message, write_message, Request, Response, SubportalError, WireResponse};
 
 /// A client that connects to the subportal daemon over a Unix socket.
 pub struct Client {
@@ -65,31 +63,32 @@ impl Client {
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
-        let mut varlink_req = request.to_varlink();
+        let mut value =
+            serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
 
         // Inject the host identifier into the request parameters.
         if let Some(ref host) = self.host {
-            if let serde_json::Value::Object(ref mut map) = varlink_req.parameters {
-                map.insert("host".to_string(), serde_json::Value::String(host.clone()));
+            if let Some(params) = value.get_mut("parameters").and_then(|v| v.as_object_mut()) {
+                params.insert("host".into(), serde_json::json!(host));
             }
         }
 
-        write_message(&mut stream, &varlink_req)
+        write_message(&mut stream, &value)
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
-        let varlink_resp: VarlinkResponse = read_message(&mut BufReader::new(&mut stream))
+        let wire_resp: WireResponse = read_message(&mut BufReader::new(&mut stream))
             .await
             .map_err(|_| SubportalError::NoClient)?;
 
         // Check for error response
-        if let Some(ref err_id) = varlink_resp.error {
-            let params = varlink_resp
+        if let Some(ref err_id) = wire_resp.error {
+            let params = wire_resp
                 .parameters
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
-            if let Some(e) = SubportalError::from_varlink(err_id, &params) {
+            if let Some(e) = SubportalError::from_wire(err_id, &params) {
                 return Err(e);
             }
             return Err(SubportalError::NotSupported {
@@ -98,10 +97,10 @@ impl Client {
         }
 
         // Parse success response based on what we sent
-        let params = varlink_resp.parameters.unwrap_or_default();
+        let params = wire_resp.parameters.unwrap_or_default();
         match request {
             Request::RevokeClient { .. } => Ok(Response::Ok),
-            Request::Ping => {
+            Request::Ping {} => {
                 let capabilities = params
                     .get("capabilities")
                     .and_then(|v| v.as_array())

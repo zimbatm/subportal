@@ -131,7 +131,7 @@ async fn main() -> ExitCode {
         Command::Status => {
             let client = Client::new();
             let start = Instant::now();
-            match client.call(&Request::Ping).await {
+            match client.call(&Request::Ping {}).await {
                 Ok(Response::Ping {
                     capabilities,
                     version,

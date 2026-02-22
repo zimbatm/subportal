@@ -26,7 +26,7 @@ async fn spawn_server(
 #[tokio::test]
 async fn ping_round_trip() {
     let (client, handle) = spawn_server(|req| {
-        assert_eq!(req, Request::Ping);
+        assert_eq!(req, Request::Ping {});
         Ok(Response::Ping {
             capabilities: vec!["open_uri".into()],
             version: "0.1.0".into(),
@@ -34,7 +34,7 @@ async fn ping_round_trip() {
     })
     .await;
 
-    let resp = client.call(&Request::Ping).await.unwrap();
+    let resp = client.call(&Request::Ping {}).await.unwrap();
     assert_eq!(
         resp,
         Response::Ping {
@@ -157,7 +157,7 @@ async fn notify_round_trip_minimal() {
 async fn error_user_denied() {
     let (client, handle) = spawn_server(|_| Err(SubportalError::UserDenied)).await;
 
-    let err = client.call(&Request::Ping).await.unwrap_err();
+    let err = client.call(&Request::Ping {}).await.unwrap_err();
     assert_eq!(err, SubportalError::UserDenied);
     handle.await.unwrap();
 }
@@ -171,7 +171,7 @@ async fn error_not_supported() {
     })
     .await;
 
-    let err = client.call(&Request::Ping).await.unwrap_err();
+    let err = client.call(&Request::Ping {}).await.unwrap_err();
     assert_eq!(
         err,
         SubportalError::NotSupported {
@@ -190,7 +190,7 @@ async fn error_file_too_large() {
     })
     .await;
 
-    let err = client.call(&Request::Ping).await.unwrap_err();
+    let err = client.call(&Request::Ping {}).await.unwrap_err();
     assert_eq!(
         err,
         SubportalError::FileTooLarge {
@@ -205,7 +205,7 @@ async fn no_server_returns_no_client() {
     let tmp = tempfile::tempdir().unwrap();
     let sock = tmp.path().join("nonexistent.sock");
     let client = Client::with_path(sock);
-    let err = client.call(&Request::Ping).await.unwrap_err();
+    let err = client.call(&Request::Ping {}).await.unwrap_err();
     assert_eq!(err, SubportalError::NoClient);
 }
 
