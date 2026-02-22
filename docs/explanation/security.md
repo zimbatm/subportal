@@ -107,11 +107,11 @@ compromised server could report any hostname. However:
 Untrusted                          Trusted
 (server)          iroh QUIC        (desktop)
 +--------------+  ===========  +--------------+
-| xdg-open     |               | subportald   |
-| notify-send  | ---------->   |   |          |
-| subportal    |               |   v          |
-|              |               | confirmation |
-| other tools  |               | dialog       |
+| xdg-open     |               | subportal-   |
+| notify-send  | ---------->   | desktop      |
+| subportal    |               |   |          |
+|              |               |   v          |
+| other tools  |               | confirmation |
 +--------------+               +--------------+
 ```
 

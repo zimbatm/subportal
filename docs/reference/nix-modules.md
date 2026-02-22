@@ -1,52 +1,43 @@
 # Nix module options reference
 
 subportal provides modules for NixOS, home-manager, and system-manager. Each
-system has two modules: one for the client daemon (`subportald`) and one for
+system has two modules: one for the client daemon (`subportal-desktop`) and one for
 the server-side tools (`subportal`).
 
 ## Flake outputs
 
-| Output                                  | Type           | Side   |
-| --------------------------------------- | -------------- | ------ |
-| `nixosModules.subportald`               | NixOS          | client |
-| `nixosModules.subportal`                | NixOS          | server |
-| `homeModules.subportald`                | home-manager   | client |
-| `homeModules.subportal`                 | home-manager   | server |
-| `modules.system-manager.subportald`     | system-manager | client |
-| `modules.system-manager.subportal`      | system-manager | server |
-| `packages.<system>.subportald`          | package        | client |
-| `packages.<system>.subportal`           | package        | server |
+| Output                                      | Type           | Side   |
+| ------------------------------------------- | -------------- | ------ |
+| `nixosModules.subportal-desktop`            | NixOS          | client |
+| `nixosModules.subportal`                    | NixOS          | server |
+| `homeModules.subportal-desktop`             | home-manager   | client |
+| `homeModules.subportal`                     | home-manager   | server |
+| `modules.system-manager.subportal-desktop`  | system-manager | client |
+| `modules.system-manager.subportal`          | system-manager | server |
+| `packages.<system>.subportal-desktop`       | package        | client |
+| `packages.<system>.subportal-server`        | package        | server |
 
-## Client daemon options (subportald)
+## Client daemon options (subportal-desktop)
 
 Available in NixOS, home-manager, and system-manager modules.
 
-### services.subportald.enable
+### services.subportal-desktop.enable
 
 Whether to enable the subportal client daemon.
 
 - **Type:** boolean
 - **Default:** `false`
 
-### services.subportald.package
+### services.subportal-desktop.package
 
-The subportald package to use.
+The subportal-desktop package to use.
 
 - **Type:** package
-- **Default:** `flake.packages.<system>.subportald`
+- **Default:** `flake.packages.<system>.subportal-desktop`
 
-### services.subportald.socketPath
+### services.subportal-desktop.user
 
-Unix socket path for subportald to listen on.
-
-- **Type:** string
-- **Default (NixOS/home-manager):** `%t/subportal.sock` (systemd specifier,
-  expands to `$XDG_RUNTIME_DIR/subportal.sock`)
-- **Default (system-manager):** `/run/subportal.sock`
-
-### services.subportald.user
-
-*system-manager only.* User account to run subportald as.
+*system-manager only.* User account to run subportal-desktop as.
 
 - **Type:** string
 - **Required:** yes
@@ -64,10 +55,10 @@ Whether to install the subportal server-side CLI tools.
 
 ### programs.subportal.package
 
-The subportal package to use.
+The subportal-server package to use.
 
 - **Type:** package
-- **Default:** `flake.packages.<system>.subportal`
+- **Default:** `flake.packages.<system>.subportal-server`
 
 ### programs.subportal.xdg-open
 
@@ -87,7 +78,7 @@ Whether to install the `notify-send` drop-in replacement.
 
 ### Systemd service
 
-The NixOS and home-manager `subportald` modules create a systemd user
+The NixOS and home-manager `subportal-desktop` modules create a systemd user
 service that:
 
 - Starts after `graphical-session.target`

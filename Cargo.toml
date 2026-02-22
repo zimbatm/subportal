@@ -3,9 +3,8 @@ resolver = "2"
 members = [
     "crates/subportal-lib",
     "crates/subportal-iroh",
-    "crates/subportald",
+    "crates/subportal-desktop",
     "crates/subportal",
-    "crates/subportal-agent",
     "crates/xdg-open",
     "crates/notify-send",
 ]

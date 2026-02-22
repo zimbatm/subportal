@@ -12,7 +12,7 @@ in
   options.programs.subportal = {
     enable = lib.mkEnableOption "subportal server-side CLI tools";
 
-    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal" { };
+    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal-server" { };
 
     xdg-open = lib.mkOption {
       type = lib.types.bool;

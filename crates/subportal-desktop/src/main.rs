@@ -1,4 +1,4 @@
-//! subportald -- the subportal client daemon.
+//! subportal-desktop -- the subportal client daemon.
 //!
 //! Runs on the user's desktop machine. Connects to enrolled subportal agents
 //! via iroh (peer-to-peer QUIC) and handles requests to open URLs, transfer
@@ -25,7 +25,7 @@ use tokio::io::BufReader;
 use tracing::{info, warn};
 
 #[derive(Parser)]
-#[command(name = "subportald", about = "subportal client daemon")]
+#[command(name = "subportal-desktop", about = "subportal client daemon")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -65,7 +65,7 @@ async fn run() -> Result<()> {
     let servers = registry.list().to_vec();
 
     if servers.is_empty() {
-        info!("no enrolled servers -- use 'subportald enroll' to add one");
+        info!("no enrolled servers -- use 'subportal-desktop enroll' to add one");
         // Still wait for signal so systemd doesn't restart us in a loop
         tokio::signal::ctrl_c().await?;
         return Ok(());
@@ -78,7 +78,7 @@ async fn run() -> Result<()> {
         .context("failed to bind iroh endpoint")?;
 
     info!(
-        "subportald running, endpoint: {}, connecting to {} server(s)",
+        "subportal-desktop running, endpoint: {}, connecting to {} server(s)",
         endpoint.id(),
         servers.len()
     );

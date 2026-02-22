@@ -12,7 +12,7 @@ in
   options.programs.subportal = {
     enable = lib.mkEnableOption "subportal server-side CLI tools";
 
-    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal" { };
+    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal-server" { };
 
     xdg-open = lib.mkOption {
       type = lib.types.bool;
@@ -27,11 +27,11 @@ in
     };
 
     agent = {
-      enable = lib.mkEnableOption "subportal-agent systemd service";
+      enable = lib.mkEnableOption "subportal agent systemd service";
 
       user = lib.mkOption {
         type = lib.types.str;
-        description = "User account to run subportal-agent as.";
+        description = "User account to run the subportal agent as.";
       };
     };
   };
@@ -62,7 +62,7 @@ in
       wants = [ "network-online.target" ];
 
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/subportal-agent";
+        ExecStart = "${cfg.package}/bin/subportal agent";
         Restart = "on-failure";
         RestartSec = 5;
         User = cfg.agent.user;

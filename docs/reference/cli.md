@@ -4,17 +4,17 @@ Each binary has a man page (installed with the package) that serves as the
 authoritative reference. The source files are in scdoc format and are
 readable directly.
 
-| Binary        | Side   | Description                              | Man page source                                                          |
-| ------------- | ------ | ---------------------------------------- | ------------------------------------------------------------------------ |
-| `subportald`  | client | Daemon -- listens for requests on a Unix socket | [subportald.1.scd](../../crates/subportald/subportald.1.scd)             |
-| `subportal`   | server | Explicit CLI: `status`, `open`, `notify` | [subportal.1.scd](../../crates/subportal/subportal.1.scd)                |
-| `xdg-open`    | server | Drop-in replacement for `xdg-open`       | [xdg-open.1.scd](../../crates/xdg-open/xdg-open.1.scd)                  |
-| `notify-send` | server | Drop-in replacement for `notify-send`    | [notify-send.1.scd](../../crates/notify-send/notify-send.1.scd)          |
+| Binary             | Side   | Description                              | Man page source                                                                    |
+| ------------------ | ------ | ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| `subportal-desktop`| client | Daemon -- connects to agents via iroh    | [subportal-desktop.1.scd](../../crates/subportal-desktop/subportal-desktop.1.scd)  |
+| `subportal`        | server | CLI + agent: `status`, `open`, `notify`, `agent`, `ticket`, `clients`, `revoke` | [subportal.1.scd](../../crates/subportal/subportal.1.scd)                |
+| `xdg-open`         | server | Drop-in replacement for `xdg-open`       | [xdg-open.1.scd](../../crates/xdg-open/xdg-open.1.scd)                            |
+| `notify-send`      | server | Drop-in replacement for `notify-send`    | [notify-send.1.scd](../../crates/notify-send/notify-send.1.scd)                    |
 
 To read man pages after installation:
 
 ```sh
-man subportald
+man subportal-desktop
 man subportal
 man xdg-open
 man notify-send

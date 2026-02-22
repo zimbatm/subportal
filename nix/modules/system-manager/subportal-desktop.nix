@@ -6,22 +6,22 @@
   ...
 }:
 let
-  cfg = config.services.subportald;
+  cfg = config.services.subportal-desktop;
 in
 {
-  options.services.subportald = {
-    enable = lib.mkEnableOption "subportald, the subportal client daemon";
+  options.services.subportal-desktop = {
+    enable = lib.mkEnableOption "subportal-desktop, the subportal client daemon";
 
-    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportald" { };
+    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal-desktop" { };
 
     user = lib.mkOption {
       type = lib.types.str;
-      description = "User account to run subportald as.";
+      description = "User account to run subportal-desktop as.";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.services.subportald = {
+    systemd.services.subportal-desktop = {
       enable = true;
       description = "subportal client daemon";
       wantedBy = [ "system-manager.target" ];

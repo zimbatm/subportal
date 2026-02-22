@@ -18,16 +18,16 @@ automatically.
 
 ```
 Server (headless)                       Client (your desktop)
-                                        subportald (daemon)
+                                        subportal-desktop (daemon)
 xdg-open https://example.com  ─────>     -> confirmation dialog
 notify-send "Build done"      ─(unix)─>  -> desktop notification
 subportal open ./report.pdf   ─(sock)─>  -> opens in PDF viewer
 ```
 
-The server-side tools connect to the `subportal-agent` via a Unix domain
+The server-side tools connect to `subportal agent` via a Unix domain
 socket (`$XDG_RUNTIME_DIR/subportal.sock`). The agent routes requests to
 enrolled desktop clients over [iroh](https://iroh.computer/) (peer-to-peer
-QUIC). The client daemon (`subportald`) uses
+QUIC). The client daemon (`subportal-desktop`) uses
 [xdg-desktop-portal](https://flatpak.github.io/xdg-desktop-portal/) D-Bus
 APIs to show native dialogs and notifications on whatever desktop environment
 you run (GNOME, KDE, Sway, ...).

@@ -6,8 +6,8 @@ your local desktop.
 
 By the end, you will have:
 
-- A running `subportald` daemon on your desktop
-- A running `subportal-agent` on your server
+- A running `subportal-desktop` daemon on your desktop
+- A running `subportal agent` on your server
 - Your desktop enrolled with the agent
 - Verified the connection with `subportal status`
 
@@ -18,7 +18,7 @@ By the end, you will have:
 
 ## Step 1: Install the client daemon
 
-The client daemon (`subportald`) runs on your desktop machine -- the one with
+The client daemon (`subportal-desktop`) runs on your desktop machine -- the one with
 the monitor, browser, and notification area.
 
 ### With Nix flakes
@@ -29,8 +29,8 @@ Add subportal as a flake input and enable the module:
 # NixOS (configuration.nix or equivalent)
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.nixosModules.subportald ];
-  services.subportald.enable = true;
+  imports = [ inputs.subportal.nixosModules.subportal-desktop ];
+  services.subportal-desktop.enable = true;
 }
 ```
 
@@ -39,8 +39,8 @@ Or with home-manager:
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.homeModules.subportald ];
-  services.subportald.enable = true;
+  imports = [ inputs.subportal.homeModules.subportal-desktop ];
+  services.subportal-desktop.enable = true;
 }
 ```
 
@@ -52,27 +52,26 @@ headers):
 ```sh
 git clone https://git.ntd.one/zimbatm/subportal.git
 cd subportal
-cargo build --release --bin subportald
+cargo build --release --bin subportal-desktop
 ```
 
 Copy the binary somewhere in your `$PATH`:
 
 ```sh
-cp target/release/subportald ~/.local/bin/
+cp target/release/subportal-desktop ~/.local/bin/
 ```
 
 Start it:
 
 ```sh
-subportald &
+subportal-desktop &
 ```
 
 ## Step 2: Install server-side tools
 
-On the remote server, install the server-side package. This provides four
-binaries: `subportal-agent` (the agent daemon), `subportal` (the explicit
-CLI), `xdg-open` (drop-in replacement), and `notify-send` (drop-in
-replacement).
+On the remote server, install the server-side package. This provides three
+binaries: `subportal` (the CLI and agent daemon), `xdg-open` (drop-in
+replacement), and `notify-send` (drop-in replacement).
 
 ### With Nix flakes
 
@@ -101,7 +100,7 @@ Or with home-manager:
 Build the server-side tools:
 
 ```sh
-cargo build --release -p subportal -p subportal-agent -p xdg-open -p notify-send
+cargo build --release -p subportal -p xdg-open -p notify-send
 ```
 
 Install them somewhere in your `$PATH`, making sure the drop-in replacements
@@ -109,7 +108,6 @@ appear *before* the system `xdg-open` and `notify-send`:
 
 ```sh
 cp target/release/subportal ~/.local/bin/
-cp target/release/subportal-agent ~/.local/bin/
 cp target/release/xdg-open ~/.local/bin/
 cp target/release/notify-send ~/.local/bin/
 ```
@@ -117,7 +115,7 @@ cp target/release/notify-send ~/.local/bin/
 Start the agent:
 
 ```sh
-subportal-agent run &
+subportal agent &
 ```
 
 ## Step 3: Enroll your desktop
@@ -126,7 +124,7 @@ The easiest way to enroll is to pipe a ticket from the server to the client
 using SSH as a one-time transport:
 
 ```sh
-ssh myserver subportal-agent ticket | subportald enroll
+ssh myserver subportal ticket | subportal-desktop enroll
 ```
 
 This generates an enrollment ticket on the server and feeds it to the client.
@@ -147,7 +145,7 @@ subportal status
 You should see output like:
 
 ```
-subportald v0.1.0
+subportal v0.2.0
 latency: 12.3ms
 capabilities: OpenURI, OpenFile, Notify
 ```

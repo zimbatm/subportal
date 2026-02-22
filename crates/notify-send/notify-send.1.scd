@@ -12,8 +12,8 @@ notify-send [_OPTIONS_] _TITLE_ [_BODY_]
 
 This is the subportal drop-in replacement for notify-send(1). When placed
 earlier in *$PATH* than the real notify-send, it transparently forwards
-notifications to a running *subportal-agent*(1), which routes them via iroh
-(peer-to-peer QUIC) to enrolled desktop clients running *subportald*(1).
+notifications to the running *subportal*(1) agent, which routes them via iroh
+(peer-to-peer QUIC) to enrolled desktop clients running *subportal-desktop*(1).
 Notifications are displayed via the standard _org.freedesktop.Notifications_
 D-Bus interface.
 
@@ -74,14 +74,14 @@ does not support these features.
 
 # TRANSPORT
 
-Server-side tools connect to the *subportal-agent*(1) via a Unix domain
+Server-side tools connect to the *subportal*(1) agent via a Unix domain
 socket at _$XDG_RUNTIME_DIR/subportal.sock_. The agent forwards requests to
 enrolled desktop clients over iroh (peer-to-peer QUIC). No SSH tunnel or
 port forwarding is required.
 
 # SEE ALSO
 
-*subportal*(1), *xdg-open*(1), *subportald*(1)
+*subportal*(1), *xdg-open*(1), *subportal-desktop*(1)
 
 # AUTHORS
 

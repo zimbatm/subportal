@@ -12,7 +12,7 @@ in
   options.programs.subportal = {
     enable = lib.mkEnableOption "subportal server-side CLI tools";
 
-    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal" { };
+    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal-server" { };
 
     xdg-open = lib.mkOption {
       type = lib.types.bool;
@@ -26,7 +26,7 @@ in
       description = "Whether to install the notify-send drop-in replacement.";
     };
 
-    agent.enable = lib.mkEnableOption "subportal-agent systemd user service";
+    agent.enable = lib.mkEnableOption "subportal agent systemd user service";
   };
 
   config = lib.mkIf cfg.enable {
@@ -56,7 +56,7 @@ in
       wants = [ "network-online.target" ];
 
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/subportal-agent";
+        ExecStart = "${cfg.package}/bin/subportal agent";
         Restart = "on-failure";
         RestartSec = 5;
       };

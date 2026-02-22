@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Subportal Desktop
+Comment=Forwards desktop requests from remote servers via iroh
+Exec=subportal-desktop
+Icon=network-server
+NoDisplay=true
+Categories=Network;

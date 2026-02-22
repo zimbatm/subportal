@@ -117,13 +117,13 @@ subportal notify ...      # explicit notify
 ### Agent CLI
 
 ```bash
-subportal-agent run             # start the agent (default)
-subportal-agent ticket [--ttl]  # generate enrollment ticket
-subportal-agent clients         # list enrolled clients
-subportal-agent revoke <id>     # revoke an enrolled client
+subportal agent             # start the agent daemon
+subportal ticket [--ttl]    # generate enrollment ticket
+subportal clients           # list enrolled clients
+subportal revoke <id>       # revoke an enrolled client
 ```
 
-## Client Daemon -- `subportald`
+## Client Daemon -- `subportal-desktop`
 
 Runs on the user's desktop machine. Connects to enrolled agents via iroh.
 
@@ -198,13 +198,12 @@ auto_open_files = false   # still confirm
 
 ## Components
 
-| Component        | Runs on         | Language | Description                                          |
-| ---------------- | --------------- | -------- | ---------------------------------------------------- |
-| `subportal-agent`| Server          | Rust     | Agent daemon, Unix socket + iroh, routes requests    |
-| `subportald`     | Client desktop  | Rust     | Client daemon, iroh + xdg-desktop-portal + D-Bus    |
-| `xdg-open`       | Server          | Rust     | Drop-in replacement, connects to agent               |
-| `notify-send`    | Server          | Rust     | Drop-in replacement                                  |
-| `subportal`      | Server          | Rust     | Explicit CLI for all capabilities + status            |
+| Component           | Runs on         | Language | Description                                          |
+| ------------------- | --------------- | -------- | ---------------------------------------------------- |
+| `subportal`         | Server          | Rust     | CLI + agent daemon, Unix socket + iroh, routes requests |
+| `subportal-desktop` | Client desktop  | Rust     | Client daemon, iroh + xdg-desktop-portal + D-Bus    |
+| `xdg-open`          | Server          | Rust     | Drop-in replacement, connects to agent               |
+| `notify-send`       | Server          | Rust     | Drop-in replacement                                  |
 
 ## NixOS / home-manager / system-manager
 
@@ -214,18 +213,18 @@ The flake exports packages and modules for all three systems.
 
 | Flake output | Contents |
 | --- | --- |
-| `packages.<system>.subportald` | Client daemon binary |
-| `packages.<system>.subportal` | Server-side CLI tools (`subportal`, `subportal-agent`, `xdg-open`, `notify-send`) |
+| `packages.<system>.subportal-desktop` | Client daemon binary |
+| `packages.<system>.subportal-server` | Server-side CLI tools (`subportal`, `xdg-open`, `notify-send`) |
 
 ### Modules
 
 | Flake output | Type | Description |
 | --- | --- | --- |
-| `nixosModules.subportald` | NixOS | systemd user service for the client daemon |
+| `nixosModules.subportal-desktop` | NixOS | systemd user service for the client daemon |
 | `nixosModules.subportal` | NixOS | Server-side CLI tools in `environment.systemPackages` |
-| `homeModules.subportald` | home-manager | systemd user service for the client daemon |
+| `homeModules.subportal-desktop` | home-manager | systemd user service for the client daemon |
 | `homeModules.subportal` | home-manager | Server-side CLI tools in `home.packages` |
-| `modules.system-manager.subportald` | system-manager | systemd system service for the client daemon |
+| `modules.system-manager.subportal-desktop` | system-manager | systemd system service for the client daemon |
 | `modules.system-manager.subportal` | system-manager | Server-side CLI tools in `environment.systemPackages` |
 
 ### Client setup (desktop machine)
@@ -235,8 +234,8 @@ NixOS:
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.nixosModules.subportald ];
-  services.subportald.enable = true;
+  imports = [ inputs.subportal.nixosModules.subportal-desktop ];
+  services.subportal-desktop.enable = true;
 }
 ```
 
@@ -245,8 +244,8 @@ home-manager:
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.homeModules.subportald ];
-  services.subportald.enable = true;
+  imports = [ inputs.subportal.homeModules.subportal-desktop ];
+  services.subportal-desktop.enable = true;
 }
 ```
 
@@ -285,4 +284,4 @@ to disable them.
 - Clipboard forwarding
 - FileChooser (client -> server file picker)
 - Chunked file transfer (large files)
-- Multiple agent connections (subportald manages several agents)
+- Multiple agent connections (subportal-desktop manages several agents)

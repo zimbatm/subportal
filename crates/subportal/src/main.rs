@@ -1,9 +1,13 @@
-//! subportal -- explicit CLI for the subportal protocol.
+//! subportal -- server-side CLI for the subportal protocol.
 //!
 //! Provides `status`, `open`, and `notify` subcommands for interacting with
-//! the subportal daemon from the server side. Unlike the drop-in replacements,
-//! this binary is invoked explicitly and provides richer output (e.g. latency
-//! and capability reporting via `status`).
+//! the subportal agent from the server side, plus `agent`, `ticket`, `clients`,
+//! and `revoke` subcommands for managing the agent daemon and enrolled clients.
+
+mod agent;
+mod enrollment;
+mod hub;
+mod router;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -45,6 +49,21 @@ enum Command {
         #[arg(short, long)]
         icon: Option<String>,
     },
+    /// Start the agent daemon
+    Agent,
+    /// Generate an enrollment ticket (requires running agent)
+    Ticket {
+        /// Token TTL in seconds
+        #[arg(long, default_value_t = subportal_iroh::consts::DEFAULT_TOKEN_TTL_SECS)]
+        ttl: u64,
+    },
+    /// List enrolled clients
+    Clients,
+    /// Revoke an enrolled client
+    Revoke {
+        /// Client name or endpoint ID
+        name_or_id: String,
+    },
 }
 
 fn is_url(target: &str) -> bool {
@@ -64,10 +83,14 @@ fn no_client_error(client: &Client) {
     eprintln!("subportal: daemon is not reachable");
     if path.exists() {
         eprintln!("  socket: {} (exists but not responding)", path.display());
-        eprintln!("  hint: is subportal-agent running? check with: systemctl --user status subportal-agent");
+        eprintln!(
+            "  hint: is the agent running? check with: systemctl --user status subportal-agent"
+        );
     } else {
         eprintln!("  socket: {} (not found)", path.display());
-        eprintln!("  hint: is subportal-agent running? check with: systemctl --user status subportal-agent");
+        eprintln!(
+            "  hint: is the agent running? check with: systemctl --user status subportal-agent"
+        );
     }
 }
 
@@ -76,10 +99,37 @@ async fn main() -> ExitCode {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
-    let client = Client::new();
-
     match cli.command {
+        Command::Agent => match agent::run().await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("subportal agent: {e:#}");
+                ExitCode::from(1)
+            }
+        },
+        Command::Ticket { ttl } => match enrollment::print_ticket(ttl).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("subportal ticket: {e:#}");
+                ExitCode::from(1)
+            }
+        },
+        Command::Clients => match enrollment::list_clients().await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("subportal clients: {e:#}");
+                ExitCode::from(1)
+            }
+        },
+        Command::Revoke { ref name_or_id } => match enrollment::revoke_client(name_or_id).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("subportal revoke: {e:#}");
+                ExitCode::from(1)
+            }
+        },
         Command::Status => {
+            let client = Client::new();
             let start = Instant::now();
             match client.call(&Request::Ping).await {
                 Ok(Response::Ping {
@@ -87,7 +137,7 @@ async fn main() -> ExitCode {
                     version,
                 }) => {
                     let latency = start.elapsed();
-                    println!("subportald v{version}");
+                    println!("subportal v{version}");
                     println!("latency: {:.1}ms", latency.as_secs_f64() * 1000.0);
                     println!("capabilities: {}", capabilities.join(", "));
                     ExitCode::SUCCESS
@@ -107,6 +157,7 @@ async fn main() -> ExitCode {
             }
         }
         Command::Open { ref target } => {
+            let client = Client::new();
             let request = if is_url(target) {
                 Request::OpenURI {
                     uri: target.clone(),
@@ -170,6 +221,7 @@ async fn main() -> ExitCode {
             ref urgency,
             ref icon,
         } => {
+            let client = Client::new();
             let request = Request::Notify {
                 title: title.clone(),
                 body: body.clone(),

@@ -14,7 +14,7 @@ subportal status
 Healthy output:
 
 ```
-subportald v0.1.0
+subportal v0.2.0
 latency: 12.3ms
 capabilities: OpenURI, OpenFile, Notify
 ```
@@ -33,9 +33,9 @@ If the file is missing, the agent is not running.
 
 Causes:
 
-1. The agent (`subportal-agent`) is not running. Start it with:
+1. The agent is not running. Start it with:
    ```sh
-   subportal-agent run
+   subportal agent
    ```
    Or enable the systemd service.
 2. The `$XDG_RUNTIME_DIR` does not exist. Verify with `echo
@@ -57,7 +57,7 @@ Or if running manually, check the terminal output.
 **Symptom:** `subportal status` reports "no client daemon reachable".
 
 ```sh
-subportal-agent clients
+subportal clients
 ```
 
 If no clients are listed, you need to enroll a desktop client. See
@@ -65,9 +65,9 @@ If no clients are listed, you need to enroll a desktop client. See
 
 If clients are listed but disconnected, check:
 
-1. The client daemon (`subportald`) is running on your desktop:
+1. The client daemon (`subportal-desktop`) is running on your desktop:
    ```sh
-   systemctl --user status subportald
+   systemctl --user status subportal-desktop
    ```
 2. Both machines have internet connectivity
 3. No firewall is blocking QUIC (UDP) traffic
@@ -104,9 +104,9 @@ stat -c '%U' $XDG_RUNTIME_DIR/subportal.sock
      /org/freedesktop/Notifications \
      org.freedesktop.Notifications.GetServerInformation
    ```
-3. Check `subportald` logs for errors:
+3. Check `subportal-desktop` logs for errors:
    ```sh
-   journalctl --user -u subportald -f
+   journalctl --user -u subportal-desktop -f
    ```
 
 ## xdg-open confirmation is never shown
@@ -152,17 +152,17 @@ Set the `RUST_LOG` environment variable for verbose output:
 RUST_LOG=debug subportal status
 
 # Agent:
-RUST_LOG=debug subportal-agent run
+RUST_LOG=debug subportal agent
 
 # Client daemon (restart with):
-RUST_LOG=debug subportald
+RUST_LOG=debug subportal-desktop
 ```
 
 Or if using systemd:
 
 ```sh
-systemctl --user stop subportald
-RUST_LOG=debug subportald
+systemctl --user stop subportal-desktop
+RUST_LOG=debug subportal-desktop
 ```
 
 Then reproduce the issue and examine the output.
@@ -177,5 +177,5 @@ tools agree:
 echo ${SUBPORTAL_SOCKET:-$XDG_RUNTIME_DIR/subportal.sock}
 
 # What the agent is listening on (check the process arguments):
-ps aux | grep subportal-agent
+ps aux | grep 'subportal agent'
 ```

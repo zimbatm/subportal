@@ -1,8 +1,12 @@
 [package]
-name = "subportald"
+name = "subportal-desktop"
 version = "0.1.0"
 edition = "2021"
-description = "Client daemon — listens on TCP, talks to xdg-desktop-portal"
+description = "Client daemon — connects to subportal agents via iroh, talks to xdg-desktop-portal"
+
+[[bin]]
+name = "subportal-desktop"
+path = "src/main.rs"
 
 [dependencies]
 subportal-lib = { workspace = true }

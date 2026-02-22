@@ -14,8 +14,8 @@ xdg-open {*--help* | *--version*}
 
 This is the subportal drop-in replacement for xdg-open(1). When placed
 earlier in *$PATH* than the real xdg-open, it transparently forwards open
-requests to a running *subportal-agent*(1), which routes them via iroh
-(peer-to-peer QUIC) to the client daemon (*subportald*). The client opens
+requests to the running *subportal*(1) agent, which routes them via iroh
+(peer-to-peer QUIC) to the client daemon (*subportal-desktop*). The client opens
 them on the local desktop using xdg-desktop-portal.
 
 If the target is a URL (contains a _scheme://_), it is sent as an *OpenURI*
@@ -62,14 +62,14 @@ Exit codes follow the xdg-open convention:
 
 # TRANSPORT
 
-Server-side tools connect to the *subportal-agent*(1) via a Unix domain
+Server-side tools connect to the *subportal*(1) agent via a Unix domain
 socket at _$XDG_RUNTIME_DIR/subportal.sock_. The agent forwards requests to
 enrolled desktop clients over iroh (peer-to-peer QUIC). No SSH tunnel or
 port forwarding is required.
 
 # SEE ALSO
 
-*subportal*(1), *notify-send*(1), *subportald*(1)
+*subportal*(1), *notify-send*(1), *subportal-desktop*(1)
 
 # AUTHORS
 

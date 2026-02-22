@@ -3420,24 +3420,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
- "clap",
- "mime_guess",
- "subportal-lib",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "subportal-agent"
-version = "0.2.0"
-dependencies = [
- "anyhow",
  "chrono",
  "clap",
  "hex",
  "iroh",
  "libc",
+ "mime_guess",
  "rand",
  "serde",
  "serde_json",
@@ -3446,6 +3434,29 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "subportal-desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ashpd",
+ "base64",
+ "chrono",
+ "clap",
+ "hex",
+ "iroh",
+ "libc",
+ "rand",
+ "serde_json",
+ "subportal-iroh",
+ "subportal-lib",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "zbus",
 ]
 
 [[package]]
@@ -3478,29 +3489,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "subportald"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ashpd",
- "base64",
- "chrono",
- "clap",
- "hex",
- "iroh",
- "libc",
- "rand",
- "serde_json",
- "subportal-iroh",
- "subportal-lib",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "zbus",
 ]
 
 [[package]]

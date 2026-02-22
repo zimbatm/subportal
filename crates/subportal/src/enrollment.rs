@@ -31,7 +31,7 @@ pub async fn print_ticket(ttl: u64) -> Result<()> {
                 eprintln!("  socket: {} (not found)", path.display());
             }
             eprintln!();
-            eprintln!("Is the agent running? Start it with: subportal-agent run");
+            eprintln!("Is the agent running? Start it with: subportal agent");
             anyhow::bail!("could not connect to running agent");
         }
     }
@@ -97,7 +97,7 @@ pub async fn revoke_client(name_or_id: &str) -> Result<()> {
                 eprintln!("  socket: {} (not found)", path.display());
             }
             eprintln!();
-            eprintln!("Is the agent running? Start it with: subportal-agent run");
+            eprintln!("Is the agent running? Start it with: subportal agent");
             anyhow::bail!("could not connect to running agent");
         }
     }

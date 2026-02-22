@@ -322,7 +322,6 @@ impl Hub {
 
         Ok(Response::Ok)
     }
-
 }
 
 /// Thread-safe handle to the hub.

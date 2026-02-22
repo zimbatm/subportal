@@ -17,7 +17,7 @@ Add subportal to your flake inputs:
 
 ## Client setup (desktop machine)
 
-The client daemon (`subportald`) runs on your desktop and handles incoming
+The client daemon (`subportal-desktop`) runs on your desktop and handles incoming
 requests from remote agents.
 
 ### NixOS
@@ -25,9 +25,9 @@ requests from remote agents.
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.nixosModules.subportald ];
+  imports = [ inputs.subportal.nixosModules.subportal-desktop ];
 
-  services.subportald.enable = true;
+  services.subportal-desktop.enable = true;
 }
 ```
 
@@ -38,9 +38,9 @@ This creates a systemd user service that starts with your graphical session.
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.homeModules.subportald ];
+  imports = [ inputs.subportal.homeModules.subportal-desktop ];
 
-  services.subportald.enable = true;
+  services.subportal-desktop.enable = true;
 }
 ```
 
@@ -52,9 +52,9 @@ requires specifying the user:
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.subportal.modules.system-manager.subportald ];
+  imports = [ inputs.subportal.modules.system-manager.subportal-desktop ];
 
-  services.subportald = {
+  services.subportal-desktop = {
     enable = true;
     user = "myuser";
     socketPath = "/run/subportal.sock";
@@ -64,7 +64,7 @@ requires specifying the user:
 
 ## Server setup (remote host)
 
-The server-side package provides `subportal`, `subportal-agent`, `xdg-open`,
+The server-side package provides `subportal`, `xdg-open`,
 and `notify-send`.
 
 ### NixOS
@@ -116,7 +116,7 @@ and `notify-send`.
 After both the client and server are running, enroll the desktop client:
 
 ```sh
-ssh myserver subportal-agent ticket | subportald enroll
+ssh myserver subportal ticket | subportal-desktop enroll
 ```
 
 See [enrollment](enrollment.md) for full details.

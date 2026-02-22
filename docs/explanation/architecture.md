@@ -10,32 +10,30 @@ environment. The difference is that the boundary is a network connection
 
 ```
 Server (headless)                         Client (desktop)
-                                          +--------------+
-+-------------+                           |  subportald  |
-|  xdg-open   |--+                        |              |
-+-------------+  |  +------------------+  |  +--------+  |
-| notify-send |--+--| subportal-agent  |====|  portal  |  |
-+-------------+  |  |  (Unix socket    |  |  |  D-Bus  |  |
-|  subportal  |--+  |   + iroh QUIC)   |  |  +--------+  |
-+-------------+     +------------------+  +--------------+
+                                          +------------------+
++-------------+                           | subportal-desktop|
+|  xdg-open   |--+                        |                  |
++-------------+  |  +------------------+  |  +--------+      |
+| notify-send |--+--| subportal agent  |====|  portal  |     |
++-------------+  |  |  (Unix socket    |  |  |  D-Bus  |     |
+|  subportal  |--+  |   + iroh QUIC)   |  |  +--------+      |
++-------------+     +------------------+  +------------------+
 ```
 
 ## Components
 
-The project has six crates, split into three installable packages:
+The project has five crates, split into two installable packages:
 
-### subportal (server-side package)
+### subportal-server (server-side package)
 
-Contains four binaries, all installed on the remote server:
+Contains three binaries, all installed on the remote server:
 
-- **subportal** -- explicit CLI with `status`, `open`, and `notify`
-  subcommands. Used when you want explicit control or diagnostic output
-  (latency, capabilities).
-
-- **subportal-agent** -- the agent daemon that bridges local tools to
-  remote desktop clients. Listens on a Unix socket for local requests and
-  on an iroh endpoint for client connections. Handles enrollment, routing,
-  and client management.
+- **subportal** -- CLI with `status`, `open`, `notify` subcommands for
+  user-facing operations, plus `agent`, `ticket`, `clients`, and `revoke`
+  subcommands for managing the agent daemon and enrolled clients. The
+  `agent` subcommand starts the daemon that bridges local tools to remote
+  desktop clients. It listens on a Unix socket for local requests and on an
+  iroh endpoint for client connections.
 
 - **xdg-open** -- drop-in replacement for the standard `xdg-open`. Placed
   earlier in `$PATH` so that existing tools and scripts work transparently.
@@ -46,7 +44,7 @@ Contains four binaries, all installed on the remote server:
 
 All CLI tools use the shared library to connect to the agent.
 
-### subportald (client-side package)
+### subportal-desktop (client-side package)
 
 A single daemon binary that runs on the user's desktop machine. It:
 
@@ -95,10 +93,10 @@ A typical request follows this path:
 2. The **client library** connects to the Unix socket at the configured path,
    serializes the request as NUL-delimited JSON, and sends it.
 
-3. The **subportal-agent** receives the request, determines which connected
+3. The **subportal agent** receives the request, determines which connected
    client(s) should handle it (routing), and forwards it over iroh QUIC.
 
-4. **subportald** receives the request on its iroh connection and validates it.
+4. **subportal-desktop** receives the request on its iroh connection and validates it.
 
 5. The **handler** dispatches the request to the appropriate **portal**
    function.
@@ -138,7 +136,7 @@ Desktop clients are enrolled with the agent using one-time tickets:
 1. The agent generates a ticket containing its iroh endpoint address and a
    one-time token
 2. The ticket is transferred to the desktop (e.g. via `ssh myserver
-   subportal-agent ticket | subportald enroll`)
+   subportal ticket | subportal-desktop enroll`)
 3. The desktop client connects to the agent, presents the token, and is
    enrolled in the persistent registry
 4. On subsequent starts, the client reconnects automatically using the
@@ -146,7 +144,7 @@ Desktop clients are enrolled with the agent using one-time tickets:
 
 ## Desktop integration
 
-subportald uses two separate D-Bus interfaces:
+subportal-desktop uses two separate D-Bus interfaces:
 
 ### xdg-desktop-portal (for OpenURI and OpenFile)
 
@@ -155,7 +153,7 @@ provides a desktop-neutral API for file and URI opening. It handles
 confirmation dialogs natively -- on GNOME you get GNOME dialogs, on KDE you
 get KDE dialogs.
 
-subportald uses the [ashpd](https://crates.io/crates/ashpd) Rust library to
+subportal-desktop uses the [ashpd](https://crates.io/crates/ashpd) Rust library to
 talk to the portal.
 
 ### org.freedesktop.Notifications (for Notify)

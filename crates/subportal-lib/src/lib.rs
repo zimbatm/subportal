@@ -3,7 +3,7 @@
 //! subportal bridges a headless server to the user's local desktop by
 //! forwarding requests like "open URL" and "show notification" via iroh
 //! (peer-to-peer QUIC). This crate provides the building blocks used by the
-//! agent, the client daemon (`subportald`), and the server-side CLI tools.
+//! server-side CLI (`subportal`) and the client daemon (`subportal-desktop`).
 //!
 //! # Modules
 //!

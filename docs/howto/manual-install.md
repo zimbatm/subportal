@@ -41,8 +41,8 @@ cargo build --release
 Or build with Nix:
 
 ```sh
-nix build .#subportald   # client daemon
-nix build .#subportal    # server-side tools
+nix build .#subportal-desktop   # client daemon
+nix build .#subportal-server    # server-side tools
 ```
 
 ## Installing the client daemon (desktop machine)
@@ -50,18 +50,18 @@ nix build .#subportal    # server-side tools
 Copy the daemon binary:
 
 ```sh
-cp target/release/subportald ~/.local/bin/
+cp target/release/subportal-desktop ~/.local/bin/
 ```
 
 ### Starting manually
 
 ```sh
-subportald &
+subportal-desktop &
 ```
 
 ### Autostart with systemd
 
-Create `~/.config/systemd/user/subportald.service`:
+Create `~/.config/systemd/user/subportal-desktop.service`:
 
 ```ini
 [Unit]
@@ -70,7 +70,7 @@ After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
-ExecStart=%h/.local/bin/subportald
+ExecStart=%h/.local/bin/subportal-desktop
 Restart=on-failure
 RestartSec=5
 
@@ -82,7 +82,7 @@ Enable and start it:
 
 ```sh
 systemctl --user daemon-reload
-systemctl --user enable --now subportald
+systemctl --user enable --now subportal-desktop
 ```
 
 ### Autostart with XDG
@@ -90,18 +90,17 @@ systemctl --user enable --now subportald
 Copy the desktop file to autostart:
 
 ```sh
-cp crates/subportald/subportald.desktop ~/.config/autostart/
+cp crates/subportal-desktop/subportal-desktop.desktop ~/.config/autostart/
 ```
 
 Edit `Exec=` to point to your binary location.
 
 ## Installing server-side tools (remote server)
 
-Copy the four server-side binaries:
+Copy the three server-side binaries:
 
 ```sh
 scp target/release/subportal myserver:~/.local/bin/
-scp target/release/subportal-agent myserver:~/.local/bin/
 scp target/release/xdg-open myserver:~/.local/bin/
 scp target/release/notify-send myserver:~/.local/bin/
 ```
@@ -126,7 +125,7 @@ which xdg-open
 Man pages are written in `scdoc` format. If you have `scdoc` installed:
 
 ```sh
-scdoc < crates/subportald/subportald.1.scd > subportald.1
+scdoc < crates/subportal-desktop/subportal-desktop.1.scd > subportal-desktop.1
 scdoc < crates/subportal/subportal.1.scd > subportal.1
 scdoc < crates/xdg-open/xdg-open.1.scd > xdg-open.1
 scdoc < crates/notify-send/notify-send.1.scd > notify-send.1
@@ -135,7 +134,7 @@ scdoc < crates/notify-send/notify-send.1.scd > notify-send.1
 Install them:
 
 ```sh
-install -Dm644 subportald.1 ~/.local/share/man/man1/subportald.1
+install -Dm644 subportal-desktop.1 ~/.local/share/man/man1/subportal-desktop.1
 install -Dm644 subportal.1 ~/.local/share/man/man1/subportal.1
 install -Dm644 xdg-open.1 ~/.local/share/man/man1/xdg-open.1
 install -Dm644 notify-send.1 ~/.local/share/man/man1/notify-send.1
@@ -146,8 +145,8 @@ install -Dm644 notify-send.1 ~/.local/share/man/man1/notify-send.1
 Remove the binaries and service files:
 
 ```sh
-rm ~/.local/bin/{subportald,subportal,xdg-open,notify-send}
-systemctl --user disable --now subportald
-rm ~/.config/systemd/user/subportald.service
+rm ~/.local/bin/{subportal-desktop,subportal,xdg-open,notify-send}
+systemctl --user disable --now subportal-desktop
+rm ~/.config/systemd/user/subportal-desktop.service
 systemctl --user daemon-reload
 ```

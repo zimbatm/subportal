@@ -19,12 +19,12 @@ pkgs.rustPlatform.buildRustPackage {
 
   cargoBuildFlags = [
     "-p"
-    "subportald"
+    "subportal-desktop"
   ];
 
   cargoTestFlags = [
     "-p"
-    "subportald"
+    "subportal-desktop"
   ];
 
   nativeBuildInputs = [
@@ -35,14 +35,14 @@ pkgs.rustPlatform.buildRustPackage {
   buildInputs = [ pkgs.dbus ];
 
   postInstall = ''
-    install -Dm644 crates/subportald/subportald.desktop $out/share/applications/subportald.desktop
+    install -Dm644 crates/subportal-desktop/subportal-desktop.desktop $out/share/applications/subportal-desktop.desktop
     mkdir -p $out/share/man/man1
-    scdoc < crates/subportald/subportald.1.scd > $out/share/man/man1/subportald.1
+    scdoc < crates/subportal-desktop/subportal-desktop.1.scd > $out/share/man/man1/subportal-desktop.1
   '';
 
   meta = {
     description = "subportal client daemon - forwards desktop requests from remote servers";
     homepage = "https://git.ntd.one/zimbatm/subportal";
-    mainProgram = "subportald";
+    mainProgram = "subportal-desktop";
   };
 }
