@@ -59,6 +59,10 @@ async fn main() -> Result<()> {
 
 async fn run() -> Result<()> {
     let dir = data_dir();
+
+    info!("subportal-desktop v{}", subportal_lib::consts::VERSION);
+    info!("data dir: {}", dir.display());
+
     let key = load_or_generate_keypair(&dir.join(KEYPAIR_FILE)).await?;
 
     let registry = ServerRegistry::load(&dir).await?;

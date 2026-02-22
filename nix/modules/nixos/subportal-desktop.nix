@@ -16,6 +16,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    environment.systemPackages = [ cfg.package ];
+
     # Run as a systemd user service so it has access to the D-Bus session bus
     # and xdg-desktop-portal.
     systemd.user.services.subportal-desktop = {

@@ -21,6 +21,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    environment.systemPackages = [ cfg.package ];
+
     systemd.services.subportal-desktop = {
       enable = true;
       description = "subportal client daemon";
