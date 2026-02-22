@@ -3,7 +3,9 @@
 //! Maps each incoming [`Request`] variant to the corresponding
 //! [`crate::portal`] function and returns the protocol response or error.
 
-use subportal_lib::consts::VERSION;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+use subportal_lib::consts::{MAX_FILE_SIZE, VERSION};
 use subportal_lib::protocol::{Request, Response, SubportalError};
 use tracing::{info, warn};
 
@@ -45,6 +47,13 @@ pub async fn handle(
             ref content,
         } => {
             info!("open_file: {name} ({mime})");
+            // Validate decoded file size before writing to disk.
+            let decoded_len = BASE64.decode(content).map(|d| d.len()).unwrap_or(0);
+            if decoded_len > MAX_FILE_SIZE {
+                return Err(SubportalError::FileTooLarge {
+                    max_bytes: MAX_FILE_SIZE as u64,
+                });
+            }
             portal::open_file(name, mime, content).await.map_err(|e| {
                 warn!("open_file failed: {e:#}");
                 SubportalError::UserDenied
