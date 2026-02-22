@@ -116,9 +116,15 @@ impl Hub {
                             .collect();
                         all_caps.sort();
                         all_caps.dedup();
+                        let mut client_names: Vec<String> =
+                            self.clients.values().map(|c| c.name.clone()).collect();
+                        client_names.sort();
+                        let endpoint_id = self.endpoint.addr().id.to_string();
                         Ok(Response::Ping {
                             capabilities: all_caps,
                             version: VERSION.to_string(),
+                            clients: client_names,
+                            endpoint_id,
                         })
                     }
                     Request::NotifyDismiss { id } => {

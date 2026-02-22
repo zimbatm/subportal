@@ -30,6 +30,8 @@ async fn ping_round_trip() {
         Ok(Response::Ping {
             capabilities: vec!["open_uri".into()],
             version: "0.1.0".into(),
+            clients: vec!["laptop".into()],
+            endpoint_id: "node123".into(),
         })
     })
     .await;
@@ -40,6 +42,8 @@ async fn ping_round_trip() {
         Response::Ping {
             capabilities: vec!["open_uri".into()],
             version: "0.1.0".into(),
+            clients: vec!["laptop".into()],
+            endpoint_id: "node123".into(),
         }
     );
     handle.await.unwrap();

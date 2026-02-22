@@ -147,9 +147,25 @@ impl Client {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown")
                     .to_string();
+                let clients = params
+                    .get("clients")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let endpoint_id = params
+                    .get("endpoint_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
                 Ok(Response::Ping {
                     capabilities,
                     version,
+                    clients,
+                    endpoint_id,
                 })
             }
             Request::Notify { .. } => {

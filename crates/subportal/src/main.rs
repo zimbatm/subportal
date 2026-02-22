@@ -135,10 +135,23 @@ async fn main() -> ExitCode {
                 Ok(Response::Ping {
                     capabilities,
                     version,
+                    clients,
+                    endpoint_id,
                 }) => {
                     let latency = start.elapsed();
                     println!("subportal v{version}");
                     println!("latency: {:.1}ms", latency.as_secs_f64() * 1000.0);
+                    println!("endpoint: {endpoint_id}");
+                    println!("socket: {}", client.path().display());
+                    if clients.is_empty() {
+                        println!("clients: none");
+                    } else {
+                        println!(
+                            "clients: {} ({})",
+                            clients.len(),
+                            clients.join(", ")
+                        );
+                    }
                     println!("capabilities: {}", capabilities.join(", "));
                     ExitCode::SUCCESS
                 }

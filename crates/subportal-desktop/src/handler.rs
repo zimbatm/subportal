@@ -27,6 +27,8 @@ pub async fn handle(
             Ok(Response::Ping {
                 capabilities: CAPABILITIES.iter().map(|s| (*s).to_string()).collect(),
                 version: VERSION.to_string(),
+                clients: vec![],
+                endpoint_id: String::new(),
             })
         }
         Request::OpenURI { ref uri } => {

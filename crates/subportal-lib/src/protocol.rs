@@ -73,6 +73,8 @@ pub enum Response {
     Ping {
         capabilities: Vec<String>,
         version: String,
+        clients: Vec<String>,
+        endpoint_id: String,
     },
     /// Generic success for non-Ping requests.
     Ok,
@@ -154,10 +156,14 @@ impl Response {
             Response::Ping {
                 capabilities,
                 version,
+                clients,
+                endpoint_id,
             } => WireResponse {
                 parameters: Some(serde_json::json!({
                     "capabilities": capabilities,
                     "version": version,
+                    "clients": clients,
+                    "endpoint_id": endpoint_id,
                 })),
                 error: None,
             },
@@ -384,6 +390,8 @@ mod tests {
         let resp = Response::Ping {
             capabilities: vec!["open_uri".into(), "notify".into()],
             version: "0.1.0".into(),
+            clients: vec!["laptop".into(), "desktop".into()],
+            endpoint_id: "abc123".into(),
         };
         let vr = resp.to_wire();
         let params = vr.parameters.unwrap();
@@ -393,6 +401,11 @@ mod tests {
         assert_eq!(caps.len(), 2);
         assert_eq!(caps[0], "open_uri");
         assert_eq!(caps[1], "notify");
+        let clients = params["clients"].as_array().unwrap();
+        assert_eq!(clients.len(), 2);
+        assert_eq!(clients[0], "laptop");
+        assert_eq!(clients[1], "desktop");
+        assert_eq!(params["endpoint_id"], "abc123");
     }
 
     #[test]
