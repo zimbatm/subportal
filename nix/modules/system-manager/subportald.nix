@@ -14,12 +14,6 @@ in
 
     package = lib.mkPackageOption flake.packages.${pkgs.system} "subportald" { };
 
-    socketPath = lib.mkOption {
-      type = lib.types.str;
-      default = "/run/subportal.sock";
-      description = "Unix socket path for subportald to listen on.";
-    };
-
     user = lib.mkOption {
       type = lib.types.str;
       description = "User account to run subportald as.";
@@ -33,8 +27,7 @@ in
       wantedBy = [ "system-manager.target" ];
 
       serviceConfig = {
-        ExecStart = "${lib.getExe cfg.package} --socket ${cfg.socketPath}";
-        RuntimeDirectory = "subportal";
+        ExecStart = lib.getExe cfg.package;
         Restart = "on-failure";
         RestartSec = 5;
         User = cfg.user;

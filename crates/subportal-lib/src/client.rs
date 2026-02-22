@@ -70,10 +70,7 @@ impl Client {
         // Inject the host identifier into the request parameters.
         if let Some(ref host) = self.host {
             if let serde_json::Value::Object(ref mut map) = varlink_req.parameters {
-                map.insert(
-                    "host".to_string(),
-                    serde_json::Value::String(host.clone()),
-                );
+                map.insert("host".to_string(), serde_json::Value::String(host.clone()));
             }
         }
 
@@ -87,19 +84,24 @@ impl Client {
 
         // Check for error response
         if let Some(ref err_id) = varlink_resp.error {
-            let params = varlink_resp.parameters.as_ref()
+            let params = varlink_resp
+                .parameters
+                .as_ref()
                 .cloned()
                 .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
             if let Some(e) = SubportalError::from_varlink(err_id, &params) {
                 return Err(e);
             }
-            return Err(SubportalError::NotSupported { capability: "unknown".into() });
+            return Err(SubportalError::NotSupported {
+                capability: "unknown".into(),
+            });
         }
 
         // Parse success response based on what we sent
+        let params = varlink_resp.parameters.unwrap_or_default();
         match request {
+            Request::RevokeClient { .. } => Ok(Response::Ok),
             Request::Ping => {
-                let params = varlink_resp.parameters.unwrap_or_default();
                 let capabilities = params
                     .get("capabilities")
                     .and_then(|v| v.as_array())
@@ -114,7 +116,26 @@ impl Client {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown")
                     .to_string();
-                Ok(Response::Ping { capabilities, version })
+                Ok(Response::Ping {
+                    capabilities,
+                    version,
+                })
+            }
+            Request::Notify { .. } => {
+                // Check if the response includes a notification ID
+                if let Some(id) = params.get("id").and_then(|v| v.as_str()) {
+                    Ok(Response::NotifyDelivered { id: id.to_string() })
+                } else {
+                    Ok(Response::Ok)
+                }
+            }
+            Request::GenerateTicket { .. } => {
+                let ticket_json = params
+                    .get("ticket_json")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                Ok(Response::Ticket { ticket_json })
             }
             _ => Ok(Response::Ok),
         }

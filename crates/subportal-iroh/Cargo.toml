@@ -1,0 +1,22 @@
+[package]
+name = "subportal-iroh"
+version = "0.2.0"
+edition = "2021"
+description = "iroh transport layer for subportal"
+license.workspace = true
+
+[dependencies]
+iroh = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+subportal-lib = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

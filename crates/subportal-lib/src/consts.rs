@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 /// Protocol version string.
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "0.2.0";
 
 /// Maximum file size for OpenFile (5 MB).
 pub const MAX_FILE_SIZE: usize = 5 * 1024 * 1024;

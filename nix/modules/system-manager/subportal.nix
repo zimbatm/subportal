@@ -25,16 +25,18 @@ in
       default = true;
       description = "Whether to install the notify-send drop-in replacement.";
     };
+
+    agent = {
+      enable = lib.mkEnableOption "subportal-agent systemd service";
+
+      user = lib.mkOption {
+        type = lib.types.str;
+        description = "User account to run subportal-agent as.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    # Ensure sshd cleans up stale Unix sockets before binding new ones.
-    # Without this, RemoteForward will fail after a disconnected SSH session
-    # leaves behind /run/user/<uid>/subportal.sock.
-    environment.etc."ssh/sshd_config.d/stream-local.conf".text = ''
-      StreamLocalBindUnlink yes
-    '';
-
     environment.systemPackages =
       let
         pkg = cfg.package;
@@ -51,5 +53,20 @@ in
         };
       in
       [ wrapped ];
+
+    systemd.services.subportal-agent = lib.mkIf cfg.agent.enable {
+      enable = true;
+      description = "subportal agent";
+      wantedBy = [ "system-manager.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+
+      serviceConfig = {
+        ExecStart = "${cfg.package}/bin/subportal-agent";
+        Restart = "on-failure";
+        RestartSec = 5;
+        User = cfg.agent.user;
+      };
+    };
   };
 }

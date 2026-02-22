@@ -9,8 +9,8 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use clap::{Parser, Subcommand};
 use subportal_lib::client::Client;
 use subportal_lib::consts::MAX_FILE_SIZE;
@@ -64,11 +64,10 @@ fn no_client_error(client: &Client) {
     eprintln!("subportal: daemon is not reachable");
     if path.exists() {
         eprintln!("  socket: {} (exists but not responding)", path.display());
-        eprintln!("  hint: is subportald running? check with: systemctl --user status subportald");
+        eprintln!("  hint: is subportal-agent running? check with: systemctl --user status subportal-agent");
     } else {
         eprintln!("  socket: {} (not found)", path.display());
-        eprintln!("  hint: is the SSH tunnel active? configure with:");
-        eprintln!("    RemoteForward {} <local-socket-path>", path.display());
+        eprintln!("  hint: is subportal-agent running? check with: systemctl --user status subportal-agent");
     }
 }
 

@@ -1,0 +1,26 @@
+[package]
+name = "subportal-agent"
+version = "0.2.0"
+edition = "2021"
+description = "subportal agent -- bridges server-side tools to desktop clients via iroh"
+license.workspace = true
+
+[[bin]]
+name = "subportal-agent"
+path = "src/main.rs"
+
+[dependencies]
+iroh = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "signal"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+libc = { workspace = true }
+subportal-lib = { workspace = true }
+subportal-iroh = { workspace = true }
