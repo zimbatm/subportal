@@ -29,7 +29,9 @@ class SubportalCallbackImpl(
 
     override fun onOpenUri(uri: String, host: String): Boolean {
         Log.i(TAG, "onOpenUri: $uri from $host")
-        return OpenUriHandler.open(context, uri, host)
+        val handled = OpenUriHandler.open(context, uri, host)
+        EventLog.record(host, EventType.OpenURI, uri, handled)
+        return handled
     }
 
     override fun onOpenFile(
@@ -39,7 +41,9 @@ class SubportalCallbackImpl(
         host: String
     ): Boolean {
         Log.i(TAG, "onOpenFile: $name ($mime) from $host")
-        return OpenFileHandler.open(context, name, mime, contentBase64, host)
+        val handled = OpenFileHandler.open(context, name, mime, contentBase64, host)
+        EventLog.record(host, EventType.OpenFile, "$name ($mime)", handled)
+        return handled
     }
 
     override fun onNotify(
@@ -51,6 +55,7 @@ class SubportalCallbackImpl(
     ) {
         Log.i(TAG, "onNotify: $title from $host")
         NotificationHelper.show(context, notificationId, title, body, urgency, host)
+        EventLog.record(host, EventType.Notify, title)
     }
 
     override fun onDismissNotification(id: String) {
@@ -60,6 +65,11 @@ class SubportalCallbackImpl(
 
     override fun onConnectionChanged(serverName: String, connected: Boolean) {
         Log.i(TAG, "onConnectionChanged: $serverName connected=$connected")
+        if (connected) {
+            EventLog.record(serverName, EventType.Connected, "Connected")
+        } else {
+            EventLog.record(serverName, EventType.Disconnected, "Disconnected")
+        }
         _serverUpdates.tryEmit(Unit)
     }
 }
