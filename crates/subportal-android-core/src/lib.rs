@@ -54,6 +54,8 @@ pub struct ServerInfo {
     pub id: String,
     pub name: String,
     pub connected: bool,
+    /// ISO 8601 timestamp of when this server was enrolled.
+    pub enrolled_at: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +227,7 @@ impl SubportalCore {
                     id: s.endpoint_id,
                     name: s.name,
                     connected: is_connected,
+                    enrolled_at: s.enrolled_at.to_rfc3339(),
                 }
             })
             .collect()

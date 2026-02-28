@@ -1683,7 +1683,11 @@ public object FfiConverterTypeSubportalCore: FfiConverter<SubportalCore, Pointer
 data class ServerInfo (
     var `id`: kotlin.String, 
     var `name`: kotlin.String, 
-    var `connected`: kotlin.Boolean
+    var `connected`: kotlin.Boolean, 
+    /**
+     * ISO 8601 timestamp of when this server was enrolled.
+     */
+    var `enrolledAt`: kotlin.String
 ) {
     
     companion object
@@ -1698,19 +1702,22 @@ public object FfiConverterTypeServerInfo: FfiConverterRustBuffer<ServerInfo> {
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
     override fun allocationSize(value: ServerInfo) = (
             FfiConverterString.allocationSize(value.`id`) +
             FfiConverterString.allocationSize(value.`name`) +
-            FfiConverterBoolean.allocationSize(value.`connected`)
+            FfiConverterBoolean.allocationSize(value.`connected`) +
+            FfiConverterString.allocationSize(value.`enrolledAt`)
     )
 
     override fun write(value: ServerInfo, buf: ByteBuffer) {
             FfiConverterString.write(value.`id`, buf)
             FfiConverterString.write(value.`name`, buf)
             FfiConverterBoolean.write(value.`connected`, buf)
+            FfiConverterString.write(value.`enrolledAt`, buf)
     }
 }
 
