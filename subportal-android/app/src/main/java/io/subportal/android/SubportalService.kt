@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import io.subportal.android.network.FocusMonitor
 import io.subportal.android.network.NetworkMonitor
 import io.subportal.android.notifications.NotificationHelper
 import uniffi.subportal_android_core.SubportalCore
@@ -24,6 +25,7 @@ class SubportalService : Service() {
     }
 
     private var networkMonitor: NetworkMonitor? = null
+    private var focusMonitor: FocusMonitor? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -38,9 +40,12 @@ class SubportalService : Service() {
         c.start()
 
         networkMonitor = NetworkMonitor(this, c).also { it.start() }
+        focusMonitor = FocusMonitor(this, c).also { it.start() }
     }
 
     override fun onDestroy() {
+        focusMonitor?.stop()
+        focusMonitor = null
         networkMonitor?.stop()
         networkMonitor = null
         core?.stop()
