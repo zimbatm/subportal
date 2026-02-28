@@ -4,33 +4,41 @@ Did you ever try to go through the oauth flow on your server and had to
 copy-paste the URL back into your local browser? Or wanted to open a file back
 in your local $EDITOR for a quick peek? Now you can.
 
-`subportal` bridges a headless server to your local desktop. Server-side
-commands like `xdg-open` and `notify-send` transparently forward requests
-via iroh (peer-to-peer QUIC) to a client daemon, which handles them using
-the local desktop environment.
+`subportal` bridges a headless server to your local desktop or phone.
+Server-side commands like `xdg-open` and `notify-send` transparently
+forward requests via iroh (peer-to-peer QUIC) to a client, which handles
+them using the local desktop environment or Android system.
 
 Open a URL on a remote server and it appears in your local browser. Send a
 notification and it pops up on your desktop. No SSH tunnels or port
-forwarding required -- just enroll your desktop once and it connects
-automatically.
+forwarding required -- just enroll once and it connects automatically.
+
+## Clients
+
+- **subportal-desktop** -- Linux daemon using
+  [xdg-desktop-portal](https://flatpak.github.io/xdg-desktop-portal/) D-Bus
+  APIs for native dialogs and notifications (GNOME, KDE, Sway, ...)
+- **subportal-android** -- Android app (Jetpack Compose). Enroll by scanning
+  an iroh ticket QR code. Receives URLs, files, and notifications as Android
+  notifications.
 
 ## How it works
 
 ```
-Server (headless)                       Client (your desktop)
-                                        subportal-desktop (daemon)
-xdg-open https://example.com  ─────>     -> confirmation dialog
-notify-send "Build done"      ─(unix)─>  -> desktop notification
+Server (headless)                       Client (desktop or phone)
+                                        subportal-desktop / android app
+xdg-open https://example.com  ─────>     -> opens in browser
+notify-send "Build done"      ─(unix)─>  -> notification
 subportal open ./report.pdf   ─(sock)─>  -> opens in PDF viewer
 ```
 
 The server-side tools connect to `subportal agent` via a Unix domain
 socket (`$XDG_RUNTIME_DIR/subportal.sock`). The agent routes requests to
-enrolled desktop clients over [iroh](https://iroh.computer/) (peer-to-peer
-QUIC). The client daemon (`subportal-desktop`) uses
-[xdg-desktop-portal](https://flatpak.github.io/xdg-desktop-portal/) D-Bus
-APIs to show native dialogs and notifications on whatever desktop environment
-you run (GNOME, KDE, Sway, ...).
+enrolled clients over [iroh](https://iroh.computer/) (peer-to-peer QUIC).
+
+On Linux, the desktop client uses xdg-desktop-portal D-Bus APIs. On
+Android, the app runs as a foreground service with a persistent QUIC
+connection and handles requests via system intents and notifications.
 
 ## Quick start
 
