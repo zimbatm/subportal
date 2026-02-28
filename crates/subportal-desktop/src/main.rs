@@ -93,10 +93,7 @@ pub fn read_pidfile() -> Option<u32> {
 }
 
 /// Spawn a reconnect loop for a single server, returning its JoinHandle.
-fn spawn_server_connection(
-    endpoint: &iroh::Endpoint,
-    server: &ServerEntry,
-) -> JoinHandle<()> {
+fn spawn_server_connection(endpoint: &iroh::Endpoint, server: &ServerEntry) -> JoinHandle<()> {
     let ep = endpoint.clone();
     let server = server.clone();
     tokio::spawn(async move {
@@ -155,9 +152,8 @@ async fn run() -> Result<()> {
     }
 
     // Set up SIGHUP handler for live reload
-    let mut sighup =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-            .context("failed to register SIGHUP handler")?;
+    let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+        .context("failed to register SIGHUP handler")?;
 
     loop {
         tokio::select! {
@@ -195,10 +191,8 @@ async fn reload_servers(
     let registry = ServerRegistry::load(dir).await?;
     let servers = registry.list().to_vec();
 
-    let new_ids: std::collections::HashSet<String> = servers
-        .iter()
-        .map(|s| s.endpoint_id.clone())
-        .collect();
+    let new_ids: std::collections::HashSet<String> =
+        servers.iter().map(|s| s.endpoint_id.clone()).collect();
 
     // Remove connections for servers no longer in the registry
     let to_remove: Vec<String> = active

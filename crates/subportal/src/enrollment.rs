@@ -10,13 +10,19 @@ use subportal_lib::protocol::{Request, Response};
 /// Connects to the running agent via its Unix socket and asks it to generate
 /// a ticket with a pending token. The token is stored in the agent's in-memory
 /// list so it can be validated when the enrolling client connects.
-pub async fn print_ticket(ttl: u64) -> Result<()> {
+///
+/// When `qr` is true, also render the ticket JSON as a QR code in the terminal.
+pub async fn print_ticket(ttl: u64, qr: bool) -> Result<()> {
     let client = Client::new();
     let request = Request::GenerateTicket { ttl };
 
     match client.call(&request).await {
         Ok(Response::Ticket { ticket_json }) => {
             println!("{ticket_json}");
+            if qr {
+                qr2term::print_qr(&ticket_json)
+                    .map_err(|e| anyhow::anyhow!("failed to render QR code: {e}"))?;
+            }
             Ok(())
         }
         Ok(_) => {

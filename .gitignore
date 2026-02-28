@@ -7,3 +7,10 @@ result-*
 
 # rust
 target/
+
+# android
+subportal-android/.gradle/
+subportal-android/build/
+subportal-android/app/build/
+subportal-android/local.properties
+subportal-android/app/src/main/jniLibs/

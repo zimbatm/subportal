@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Subportal</string>
+    <string name="service_notification_title">Subportal is running</string>
+    <string name="service_notification_text">Connected to %d server(s)</string>
+    <string name="channel_service">Service</string>
+    <string name="channel_normal">Notifications</string>
+    <string name="channel_critical">Critical Notifications</string>
+    <string name="enroll_title">Enroll with Server</string>
+    <string name="enroll_scan_qr">Scan QR Code</string>
+    <string name="enroll_paste">Paste Ticket JSON</string>
+    <string name="enroll_submit">Enroll</string>
+    <string name="servers_title">Servers</string>
+    <string name="servers_empty">No servers enrolled.\nScan a QR code or paste a ticket to get started.</string>
+    <string name="server_connected">Connected</string>
+    <string name="server_disconnected">Disconnected</string>
+    <string name="confirm_open_uri_title">Open URL?</string>
+    <string name="confirm_open_uri_message">Server %1$s wants to open:\n%2$s</string>
+</resources>

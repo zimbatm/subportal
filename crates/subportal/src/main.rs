@@ -56,6 +56,9 @@ enum Command {
         /// Token TTL in seconds
         #[arg(long, default_value_t = subportal_iroh::consts::DEFAULT_TOKEN_TTL_SECS)]
         ttl: u64,
+        /// Also display the ticket as a QR code in the terminal
+        #[arg(long)]
+        qr: bool,
     },
     /// List enrolled clients
     Clients,
@@ -107,7 +110,7 @@ async fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
-        Command::Ticket { ttl } => match enrollment::print_ticket(ttl).await {
+        Command::Ticket { ttl, qr } => match enrollment::print_ticket(ttl, qr).await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("subportal ticket: {e:#}");
@@ -146,11 +149,7 @@ async fn main() -> ExitCode {
                     if clients.is_empty() {
                         println!("clients: none");
                     } else {
-                        println!(
-                            "clients: {} ({})",
-                            clients.len(),
-                            clients.join(", ")
-                        );
+                        println!("clients: {} ({})", clients.len(), clients.join(", "));
                     }
                     println!("capabilities: {}", capabilities.join(", "));
                     ExitCode::SUCCESS

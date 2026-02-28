@@ -5,6 +5,8 @@ members = [
     "crates/subportal-iroh",
     "crates/subportal-desktop",
     "crates/subportal",
+    "crates/subportal-android-core",
+    "crates/uniffi-bindgen",
     "crates/xdg-open",
     "crates/notify-send",
 ]

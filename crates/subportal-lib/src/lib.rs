@@ -9,10 +9,10 @@
 //!
 //! - [`protocol`] -- Varlink wire types, typed request/response enums, and
 //!   NUL-delimited JSON I/O.
-//! - [`client`] -- Unix socket client that connects to the daemon and sends
-//!   requests.
-//! - [`server`] -- Unix socket server that accepts connections and dispatches
-//!   requests, with peer identity resolution via `SO_PEERCRED`.
+//! - [`client`] -- (Unix only) Unix socket client that connects to the daemon
+//!   and sends requests.
+//! - [`server`] -- (Unix only) Unix socket server that accepts connections and
+//!   dispatches requests, with peer identity resolution via `SO_PEERCRED`.
 //! - [`consts`] -- Shared constants (socket path, size limits, version).
 //!
 //! # Wire format
@@ -21,7 +21,9 @@
 //! connection carries exactly one JSON request followed by one JSON response,
 //! both terminated by a NUL byte (`0x00`).
 
+#[cfg(unix)]
 pub mod client;
 pub mod consts;
 pub mod protocol;
+#[cfg(unix)]
 pub mod server;

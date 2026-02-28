@@ -313,9 +313,7 @@ async fn handle_unix_request(
                 // Serialize the request and inject notification_id
                 let mut value =
                     serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
-                if let Some(params) =
-                    value.get_mut("parameters").and_then(|v| v.as_object_mut())
-                {
+                if let Some(params) = value.get_mut("parameters").and_then(|v| v.as_object_mut()) {
                     params.insert(
                         "notification_id".into(),
                         serde_json::Value::String(notification_id.clone()),
@@ -340,10 +338,9 @@ async fn handle_unix_request(
             // Re-lock to store notification state
             {
                 let mut hub_lock = hub.lock().await;
-                hub_lock.pending_notifications.insert(
-                    notification_id.clone(),
-                    hub::NotificationState { sent_to },
-                );
+                hub_lock
+                    .pending_notifications
+                    .insert(notification_id.clone(), hub::NotificationState { sent_to });
             }
 
             Ok(Response::NotifyDelivered {

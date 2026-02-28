@@ -140,8 +140,7 @@ impl Hub {
                 let infos = self.client_infos();
                 let best = router::pick_best(&infos, cap).ok_or(SubportalError::NoClient)?;
                 let endpoint_id = best.endpoint_id.clone();
-                let value =
-                    serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+                let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
                 self.send_to_client(&endpoint_id, &value).await
             }
             Strategy::FanOut(cap) => {
@@ -158,9 +157,7 @@ impl Hub {
                 // can map their local D-Bus IDs back to this agent-level ID.
                 let mut value =
                     serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
-                if let Some(params) =
-                    value.get_mut("parameters").and_then(|v| v.as_object_mut())
-                {
+                if let Some(params) = value.get_mut("parameters").and_then(|v| v.as_object_mut()) {
                     params.insert(
                         "notification_id".into(),
                         serde_json::Value::String(notification_id.clone()),

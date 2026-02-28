@@ -1,7 +1,5 @@
 //! Shared constants for the subportal protocol.
 
-use std::path::PathBuf;
-
 /// Protocol version string.
 pub const VERSION: &str = "0.2.0";
 
@@ -21,12 +19,13 @@ pub const SOCKET_PATH_ENV: &str = "SUBPORTAL_SOCKET";
 ///
 /// Falls back to `/run/user/<uid>/subportal.sock` if `XDG_RUNTIME_DIR` is not
 /// set. This assumes a systemd-based system where `/run/user/<uid>` exists.
-pub fn default_socket_path() -> PathBuf {
+#[cfg(unix)]
+pub fn default_socket_path() -> std::path::PathBuf {
     match std::env::var("XDG_RUNTIME_DIR") {
-        Ok(dir) => PathBuf::from(dir).join(SOCKET_NAME),
+        Ok(dir) => std::path::PathBuf::from(dir).join(SOCKET_NAME),
         Err(_) => {
             let uid = unsafe { libc::getuid() };
-            PathBuf::from(format!("/run/user/{uid}")).join(SOCKET_NAME)
+            std::path::PathBuf::from(format!("/run/user/{uid}")).join(SOCKET_NAME)
         }
     }
 }

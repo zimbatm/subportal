@@ -16,7 +16,9 @@ use tokio::io::BufReader;
 use tokio::net::UnixStream;
 
 use crate::consts::{default_socket_path, SOCKET_PATH_ENV};
-use crate::protocol::{read_message, write_message, Request, Response, SubportalError, WireResponse};
+use crate::protocol::{
+    read_message, write_message, Request, Response, SubportalError, WireResponse,
+};
 
 /// Errors returned by [`Client::call`].
 #[derive(Debug)]

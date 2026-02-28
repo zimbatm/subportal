@@ -110,9 +110,7 @@ mod tests {
     #[test]
     fn strategy_for_requests() {
         assert!(matches!(
-            strategy_for(&Request::OpenURI {
-                uri: "x".into()
-            }),
+            strategy_for(&Request::OpenURI { uri: "x".into() }),
             Strategy::PickBest("OpenURI")
         ));
         assert!(matches!(
@@ -124,9 +122,6 @@ mod tests {
             }),
             Strategy::FanOut("Notify")
         ));
-        assert!(matches!(
-            strategy_for(&Request::Ping {}),
-            Strategy::Direct
-        ));
+        assert!(matches!(strategy_for(&Request::Ping {}), Strategy::Direct));
     }
 }
