@@ -19,7 +19,10 @@ let
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     platformVersions = [ "35" ];
-    buildToolsVersions = [ "34.0.0" "35.0.0" ];
+    buildToolsVersions = [
+      "34.0.0"
+      "35.0.0"
+    ];
     includeNDK = true;
     ndkVersion = "27.2.12479018";
   };

@@ -18,4 +18,18 @@
     <string name="server_forget_confirm">Remove %s?</string>
     <string name="confirm_open_uri_title">Open URL?</string>
     <string name="confirm_open_uri_message">Server %1$s wants to open:\n%2$s</string>
+    <string name="detail_back">Back</string>
+    <string name="detail_not_found">Server not found</string>
+    <string name="detail_status">Status</string>
+    <string name="detail_endpoint_id">Endpoint ID</string>
+    <string name="detail_enrolled_at">Enrolled</string>
+    <string name="detail_event_history">Event history</string>
+    <string name="detail_no_events">No events recorded yet.</string>
+    <string name="detail_cancel">Cancel</string>
+    <string name="event_open_uri">Open URI</string>
+    <string name="event_open_file">Open File</string>
+    <string name="event_notify">Notification</string>
+    <string name="event_connected">Connected</string>
+    <string name="event_disconnected">Disconnected</string>
+    <string name="event_not_handled">Not handled</string>
 </resources>
