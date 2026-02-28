@@ -779,6 +779,8 @@ internal open class UniffiVTableCallbackInterfaceSubportalCallback(
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -801,6 +803,8 @@ fun uniffi_subportal_android_core_checksum_method_subportalcore_forget_server(
 fun uniffi_subportal_android_core_checksum_method_subportalcore_list_servers(
 ): Short
 fun uniffi_subportal_android_core_checksum_method_subportalcore_network_changed(
+): Short
+fun uniffi_subportal_android_core_checksum_method_subportalcore_reconnect(
 ): Short
 fun uniffi_subportal_android_core_checksum_method_subportalcore_set_focus_active(
 ): Short
@@ -883,6 +887,8 @@ fun uniffi_subportal_android_core_fn_method_subportalcore_forget_server(`ptr`: P
 fun uniffi_subportal_android_core_fn_method_subportalcore_list_servers(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_subportal_android_core_fn_method_subportalcore_network_changed(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_subportal_android_core_fn_method_subportalcore_reconnect(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_subportal_android_core_fn_method_subportalcore_set_focus_active(`ptr`: Pointer,`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1028,6 +1034,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_subportal_android_core_checksum_method_subportalcore_network_changed() != 63513.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_subportal_android_core_checksum_method_subportalcore_reconnect() != 1984.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_subportal_android_core_checksum_method_subportalcore_set_focus_active() != 3896.toShort()) {
@@ -1433,6 +1442,12 @@ public interface SubportalCoreInterface {
     fun `networkChanged`()
     
     /**
+     * Stop and restart the connection loop. Useful when the QUIC connection
+     * goes stale (NAT timeout, network change).
+     */
+    fun `reconnect`()
+    
+    /**
      * Update focus state (called by Kotlin when screen on/off changes).
      */
     fun `setFocusActive`(`active`: kotlin.Boolean)
@@ -1594,6 +1609,21 @@ open class SubportalCore: Disposable, AutoCloseable, SubportalCoreInterface
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_subportal_android_core_fn_method_subportalcore_network_changed(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Stop and restart the connection loop. Useful when the QUIC connection
+     * goes stale (NAT timeout, network change).
+     */override fun `reconnect`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_subportal_android_core_fn_method_subportalcore_reconnect(
         it, _status)
 }
     }

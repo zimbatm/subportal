@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -63,6 +64,7 @@ fun ServerDetailScreen(
     val scope = rememberCoroutineScope()
     var server by remember { mutableStateOf<ServerInfo?>(null) }
     var confirmingForget by remember { mutableStateOf(false) }
+    var reconnecting by remember { mutableStateOf(false) }
     val events = remember { mutableStateListOf<EventRecord>() }
 
     fun refreshServer() {
@@ -84,6 +86,17 @@ fun ServerDetailScreen(
             }
             server?.name?.let { EventLog.clear(it) }
             onBack()
+        }
+    }
+
+    fun reconnect() {
+        scope.launch {
+            reconnecting = true
+            withContext(Dispatchers.IO) {
+                SubportalService.core?.reconnect()
+            }
+            refreshServer()
+            reconnecting = false
         }
     }
 
@@ -178,11 +191,29 @@ fun ServerDetailScreen(
                 }
             }
 
-            // -- Forget button --
+            // -- Reconnect button --
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { reconnect() },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !reconnecting,
+                ) {
+                    Text(
+                        if (reconnecting) {
+                            stringResource(R.string.detail_reconnecting)
+                        } else {
+                            stringResource(R.string.detail_reconnect)
+                        }
+                    )
+                }
+            }
+
+            // -- Forget button --
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
                 if (confirmingForget) {
                     OutlinedButton(
                         onClick = { forgetServer() },

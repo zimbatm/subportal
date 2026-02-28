@@ -26,6 +26,10 @@
     <string name="detail_event_history">Event history</string>
     <string name="detail_no_events">No events recorded yet.</string>
     <string name="detail_cancel">Cancel</string>
+    <string name="detail_reconnect">Reconnect</string>
+    <string name="detail_reconnecting">Reconnecting…</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_connect">Connect</string>
     <string name="event_open_uri">Open URI</string>
     <string name="event_open_file">Open File</string>
     <string name="event_notify">Notification</string>

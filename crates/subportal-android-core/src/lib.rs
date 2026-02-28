@@ -245,6 +245,13 @@ impl SubportalCore {
         }
     }
 
+    /// Stop and restart the connection loop. Useful when the QUIC connection
+    /// goes stale (NAT timeout, network change).
+    pub fn reconnect(self: Arc<Self>) {
+        self.stop();
+        self.clone().start();
+    }
+
     /// Notify the iroh endpoint that the network changed (e.g. WiFi <-> cellular).
     pub fn network_changed(&self) {
         info!("network_changed hint received");
