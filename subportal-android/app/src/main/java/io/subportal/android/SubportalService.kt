@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import io.subportal.android.network.NetworkMonitor
 import io.subportal.android.notifications.NotificationHelper
 import uniffi.subportal_android_core.SubportalCore
 
@@ -22,6 +23,8 @@ class SubportalService : Service() {
             private set
     }
 
+    private var networkMonitor: NetworkMonitor? = null
+
     override fun onCreate() {
         super.onCreate()
         startForegroundWithNotification()
@@ -33,9 +36,13 @@ class SubportalService : Service() {
         val c = SubportalCore(dataDir, deviceName, callback)
         core = c
         c.start()
+
+        networkMonitor = NetworkMonitor(this, c).also { it.start() }
     }
 
     override fun onDestroy() {
+        networkMonitor?.stop()
+        networkMonitor = null
         core?.stop()
         core = null
         super.onDestroy()
