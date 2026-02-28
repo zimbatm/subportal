@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -29,17 +31,29 @@ import io.subportal.android.R
 import io.subportal.android.SubportalCallbackImpl
 import io.subportal.android.SubportalService
 import io.subportal.android.ui.components.ServerCard
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import uniffi.subportal_android_core.ServerInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerListScreen(onEnrollClick: () -> Unit) {
     val servers = remember { mutableStateListOf<ServerInfo>() }
+    val scope = rememberCoroutineScope()
 
     fun refreshServers() {
         SubportalService.core?.let { core ->
             servers.clear()
             servers.addAll(core.listServers())
+        }
+    }
+
+    fun forgetServer(idOrName: String) {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                SubportalService.core?.forgetServer(idOrName)
+            }
+            refreshServers()
         }
     }
 
@@ -87,7 +101,7 @@ fun ServerListScreen(onEnrollClick: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(servers) { server ->
-                    ServerCard(server = server)
+                    ServerCard(server = server, onForget = ::forgetServer)
                 }
             }
         }

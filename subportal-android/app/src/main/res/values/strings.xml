@@ -14,6 +14,8 @@
     <string name="servers_empty">No servers enrolled.\nScan a QR code or paste a ticket to get started.</string>
     <string name="server_connected">Connected</string>
     <string name="server_disconnected">Disconnected</string>
+    <string name="server_forget">Forget</string>
+    <string name="server_forget_confirm">Remove %s?</string>
     <string name="confirm_open_uri_title">Open URL?</string>
     <string name="confirm_open_uri_message">Server %1$s wants to open:\n%2$s</string>
 </resources>
