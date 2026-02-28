@@ -108,7 +108,7 @@ fun QrScanner(
                                             for (barcode in barcodes) {
                                                 if (barcode.valueType == Barcode.TYPE_TEXT) {
                                                     val value = barcode.rawValue ?: continue
-                                                    if (value.contains("endpoint_id")) {
+                                                    if (value.contains("endpoint_id") || value.startsWith("SP1:")) {
                                                         scanned = true
                                                         onQrScanned(value)
                                                     }

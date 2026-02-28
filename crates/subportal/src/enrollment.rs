@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use subportal_iroh::consts::data_dir;
 use subportal_iroh::peers::{ClientEntry, ClientRegistry};
+use subportal_iroh::ticket::Ticket;
 use subportal_lib::client::{Client, ClientError};
 use subportal_lib::protocol::{Request, Response};
 
@@ -20,7 +21,9 @@ pub async fn print_ticket(ttl: u64, qr: bool) -> Result<()> {
         Ok(Response::Ticket { ticket_json }) => {
             println!("{ticket_json}");
             if qr {
-                qr2term::print_qr(&ticket_json)
+                let ticket = Ticket::from_json(&ticket_json)?;
+                let compact = ticket.to_compact()?;
+                qr2term::print_qr(&compact)
                     .map_err(|e| anyhow::anyhow!("failed to render QR code: {e}"))?;
             }
             Ok(())

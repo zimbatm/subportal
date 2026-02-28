@@ -555,7 +555,7 @@ impl SubportalCore {
     }
 
     async fn enroll_async(&self, ticket_json: &str) -> Result<String, SubportalError> {
-        let ticket = Ticket::from_json(ticket_json)?;
+        let ticket = Ticket::parse(ticket_json)?;
 
         info!(
             "enrolling with server '{}' ({})",

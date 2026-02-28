@@ -13,7 +13,7 @@ pub async fn enroll_from_stdin() -> Result<()> {
     std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)
         .context("failed to read ticket from stdin")?;
 
-    let ticket = Ticket::from_json(input.trim())?;
+    let ticket = Ticket::parse(input.trim())?;
 
     eprintln!(
         "Enrolling with server '{}' ({})",

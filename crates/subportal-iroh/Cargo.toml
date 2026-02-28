@@ -13,6 +13,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
+base45 = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 subportal-lib = { workspace = true }
