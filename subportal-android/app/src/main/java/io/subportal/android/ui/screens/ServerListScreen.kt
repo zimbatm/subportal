@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.subportal.android.R
+import io.subportal.android.SubportalService
 import io.subportal.android.ui.components.ServerCard
 import uniffi.subportal_android_core.ServerInfo
 
@@ -34,10 +35,11 @@ import uniffi.subportal_android_core.ServerInfo
 fun ServerListScreen(onEnrollClick: () -> Unit) {
     val servers = remember { mutableStateListOf<ServerInfo>() }
 
-    // In a full implementation, this would observe a ViewModel that
-    // periodically refreshes or reacts to connection state changes.
     LaunchedEffect(Unit) {
-        // TODO: Load servers from SubportalCore.listServers()
+        SubportalService.core?.let { core ->
+            servers.clear()
+            servers.addAll(core.listServers())
+        }
     }
 
     Scaffold(

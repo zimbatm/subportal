@@ -16,7 +16,11 @@ import uniffi.subportal_android_core.SubportalCore
  */
 class SubportalService : Service() {
 
-    private var core: SubportalCore? = null
+    companion object {
+        /** Accessible from the UI to call enroll / listServers. */
+        var core: SubportalCore? = null
+            private set
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -26,8 +30,9 @@ class SubportalService : Service() {
         val deviceName = Build.MODEL
 
         val callback = SubportalCallbackImpl(this)
-        core = SubportalCore(dataDir, deviceName, callback)
-        core?.start()
+        val c = SubportalCore(dataDir, deviceName, callback)
+        core = c
+        c.start()
     }
 
     override fun onDestroy() {

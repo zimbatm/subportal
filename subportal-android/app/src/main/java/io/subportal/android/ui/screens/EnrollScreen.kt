@@ -32,8 +32,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.subportal.android.R
+import io.subportal.android.SubportalService
 import io.subportal.android.ui.components.QrScanner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,11 +51,23 @@ fun EnrollScreen(
     val scope = rememberCoroutineScope()
 
     fun enrollWithTicket(json: String) {
-        // TODO: Call SubportalCore.enroll(json) on a background thread.
-        // On success: onEnrolled()
-        // On error: set errorMessage
+        val core = SubportalService.core
+        if (core == null) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Service not running")
+            }
+            return
+        }
         scope.launch {
-            snackbarHostState.showSnackbar("Enrollment not yet connected to core")
+            try {
+                val serverName = withContext(Dispatchers.IO) {
+                    core.enroll(json)
+                }
+                snackbarHostState.showSnackbar("Enrolled with $serverName")
+                onEnrolled()
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Enrollment failed"
+            }
         }
     }
 
