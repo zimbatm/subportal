@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.subportal.android.R
+import io.subportal.android.SubportalCallbackImpl
 import io.subportal.android.SubportalService
 import io.subportal.android.ui.components.ServerCard
 import uniffi.subportal_android_core.ServerInfo
@@ -35,10 +36,22 @@ import uniffi.subportal_android_core.ServerInfo
 fun ServerListScreen(onEnrollClick: () -> Unit) {
     val servers = remember { mutableStateListOf<ServerInfo>() }
 
-    LaunchedEffect(Unit) {
+    fun refreshServers() {
         SubportalService.core?.let { core ->
             servers.clear()
             servers.addAll(core.listServers())
+        }
+    }
+
+    // Initial load
+    LaunchedEffect(Unit) {
+        refreshServers()
+    }
+
+    // Refresh when connection state changes
+    LaunchedEffect(Unit) {
+        SubportalCallbackImpl.serverUpdates.collect {
+            refreshServers()
         }
     }
 

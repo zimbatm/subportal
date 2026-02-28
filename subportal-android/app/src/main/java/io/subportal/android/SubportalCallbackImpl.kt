@@ -5,6 +5,9 @@ import android.util.Log
 import io.subportal.android.handlers.OpenFileHandler
 import io.subportal.android.handlers.OpenUriHandler
 import io.subportal.android.notifications.NotificationHelper
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import uniffi.subportal_android_core.SubportalCallback
 
 /**
@@ -19,6 +22,9 @@ class SubportalCallbackImpl(
 
     companion object {
         private const val TAG = "SubportalCallback"
+        private val _serverUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        /** Emits whenever connection state changes so the UI can refresh. */
+        val serverUpdates: SharedFlow<Unit> = _serverUpdates.asSharedFlow()
     }
 
     override fun onOpenUri(uri: String, host: String): Boolean {
@@ -54,5 +60,6 @@ class SubportalCallbackImpl(
 
     override fun onConnectionChanged(serverName: String, connected: Boolean) {
         Log.i(TAG, "onConnectionChanged: $serverName connected=$connected")
+        _serverUpdates.tryEmit(Unit)
     }
 }
