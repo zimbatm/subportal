@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,8 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.subportal.android.EventLog
 import io.subportal.android.EventRecord
@@ -347,12 +353,36 @@ private fun EventRow(event: EventRecord) {
             )
         }
         if (event.type != EventType.Connected && event.type != EventType.Disconnected) {
-            Text(
-                text = event.summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-            )
+            if (event.type == EventType.OpenURI) {
+                val uriHandler = LocalUriHandler.current
+                val linkColor = MaterialTheme.colorScheme.primary
+                val annotated = remember(event.summary) {
+                    buildAnnotatedString {
+                        pushStringAnnotation(tag = "URL", annotation = event.summary)
+                        withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                            append(event.summary)
+                        }
+                        pop()
+                    }
+                }
+                @Suppress("DEPRECATION")
+                ClickableText(
+                    text = annotated,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    onClick = { offset ->
+                        annotated.getStringAnnotations("URL", offset, offset)
+                            .firstOrNull()?.let { uriHandler.openUri(it.item) }
+                    },
+                )
+            } else {
+                Text(
+                    text = event.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                )
+            }
         }
         if (!event.handled) {
             Text(
