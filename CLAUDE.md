@@ -19,19 +19,41 @@ nix develop --command cargo test --workspace
 nix develop --command cargo build -p subportal-android-core
 ```
 
-### Regenerating UniFFI Kotlin bindings
+### Android -- full build and deploy
 
-After changing the Rust `ServerInfo` record or any `#[uniffi::export]` types, rebuild the `.so` then regenerate:
+Use the deploy script inside the `android` dev shell:
 
 ```sh
-nix develop --command cargo build -p subportal-android-core
-nix develop --command cargo run -p uniffi-bindgen generate \
+nix develop .#android --command ./scripts/android-deploy.sh
+```
+
+This does: cross-compile native `.so` via `cargo ndk` -> regenerate UniFFI
+Kotlin bindings -> `assembleDebug` -> `adb install`.
+
+To skip the native rebuild (Kotlin-only changes):
+
+```sh
+nix develop .#android --command ./scripts/android-deploy.sh --apk
+```
+
+### Regenerating UniFFI Kotlin bindings (manual)
+
+After changing Rust types exposed via `#[uniffi::export]` (e.g. `ServerInfo`),
+you must rebuild the host `.so` and regenerate:
+
+```sh
+cargo build -p subportal-android-core
+cargo run -p uniffi-bindgen generate \
   --library target/debug/libsubportal_android_core.so \
   --language kotlin \
   --out-dir subportal-android/app/src/main/java
 ```
 
-### Android
+**Important:** You must also cross-compile the Android `.so` with `cargo ndk`,
+otherwise the APK will bundle stale native code and crash at runtime with
+`BufferUnderflowException`. The deploy script handles both steps.
+
+### Android -- Gradle only
 
 ```sh
 nix develop .#android --command ./subportal-android/gradlew -p subportal-android assembleDebug
@@ -40,7 +62,7 @@ nix develop .#android --command ./subportal-android/gradlew -p subportal-android
 ## Dev shells
 
 - `default` -- Rust toolchain (cargo, rustc, etc.)
-- `android` -- Android SDK + Java (needed for Gradle builds)
+- `android` -- Android SDK, JDK, `cargo-ndk`, adb (needed for native cross-compilation and Gradle builds)
 
 ## Architecture notes
 
