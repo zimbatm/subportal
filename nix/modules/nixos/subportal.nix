@@ -12,7 +12,9 @@ in
   options.programs.subportal = {
     enable = lib.mkEnableOption "subportal server-side CLI tools";
 
-    package = lib.mkPackageOption flake.packages.${pkgs.system} "subportal-server" { };
+    package =
+      lib.mkPackageOption flake.packages.${pkgs.stdenv.hostPlatform.system} "subportal-server"
+        { };
 
     xdg-open = lib.mkOption {
       type = lib.types.bool;
@@ -24,6 +26,12 @@ in
       type = lib.types.bool;
       default = true;
       description = "Whether to install the notify-send drop-in replacement.";
+    };
+
+    relayUrl = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Custom relay server URL (e.g. https://relay.example.com). Uses default iroh relays if null.";
     };
 
     agent.enable = lib.mkEnableOption "subportal agent systemd user service";
@@ -56,7 +64,9 @@ in
       wants = [ "network-online.target" ];
 
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/subportal agent";
+        ExecStart = "${cfg.package}/bin/subportal agent${
+          lib.optionalString (cfg.relayUrl != null) " --relay-url ${cfg.relayUrl}"
+        }";
         Restart = "on-failure";
         RestartSec = 5;
       };

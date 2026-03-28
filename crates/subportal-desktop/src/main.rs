@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use iroh::{RelayMap, RelayMode};
 use subportal_iroh::consts::{data_dir, ALPN, KEYPAIR_FILE};
 use subportal_iroh::control::{
     read_control, write_control, ClientHello, ControlMessage, ServerHello,
@@ -38,7 +39,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Connect to enrolled servers (default)
-    Run,
+    Run {
+        /// Use a custom relay server URL (e.g. https://relay.example.com)
+        #[arg(long)]
+        relay_url: Option<String>,
+    },
     /// Enroll with a server (reads ticket JSON from stdin)
     Enroll,
     /// Remove an enrolled server
@@ -54,8 +59,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    match cli.command.unwrap_or(Command::Run) {
-        Command::Run => run().await,
+    match cli.command.unwrap_or(Command::Run { relay_url: None }) {
+        Command::Run { relay_url } => run(relay_url.as_deref()).await,
         Command::Enroll => enroll::enroll_from_stdin().await,
         Command::Forget { name_or_id } => forget(&name_or_id).await,
     }
@@ -113,7 +118,7 @@ fn spawn_server_connection(endpoint: &iroh::Endpoint, server: &ServerEntry) -> J
     })
 }
 
-async fn run() -> Result<()> {
+async fn run(relay_url: Option<&str>) -> Result<()> {
     let dir = data_dir();
 
     info!("subportal-desktop v{}", subportal_lib::consts::VERSION);
@@ -123,8 +128,16 @@ async fn run() -> Result<()> {
 
     // Create endpoint eagerly even with zero servers, so we are ready for
     // SIGHUP-triggered reloads after enrollment.
-    let endpoint = iroh::Endpoint::builder()
-        .secret_key(key)
+    let mut builder = iroh::Endpoint::builder().secret_key(key);
+
+    if let Some(url) = relay_url {
+        info!("using custom relay: {url}");
+        let relay_map = RelayMap::try_from_iter([url])
+            .context("invalid relay URL")?;
+        builder = builder.relay_mode(RelayMode::Custom(relay_map));
+    }
+
+    let endpoint = builder
         .bind()
         .await
         .context("failed to bind iroh endpoint")?;

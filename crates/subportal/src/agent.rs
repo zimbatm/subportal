@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use iroh::endpoint::Connection;
+use iroh::{RelayMap, RelayMode};
 use subportal_iroh::consts::{data_dir, ALPN, KEYPAIR_FILE};
 use subportal_iroh::control::{
     read_control, write_control, ClientHello, ControlMessage, FocusState, ServerHello,
@@ -16,7 +17,7 @@ use crate::hub::{self, send_to_connection, ConnectedClient, SharedHub};
 use crate::router::{self, Strategy};
 
 /// Run the agent: listen on Unix socket + iroh endpoint.
-pub async fn run() -> Result<()> {
+pub async fn run(relay_url: Option<&str>) -> Result<()> {
     let dir = data_dir();
     let key = load_or_generate_keypair(&dir.join(KEYPAIR_FILE)).await?;
 
@@ -27,9 +28,18 @@ pub async fn run() -> Result<()> {
     info!("Unix socket: {}", server.path().display());
 
     // Create iroh endpoint
-    let endpoint = iroh::Endpoint::builder()
+    let mut builder = iroh::Endpoint::builder()
         .secret_key(key)
-        .alpns(vec![ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec()]);
+
+    if let Some(url) = relay_url {
+        info!("using custom relay: {url}");
+        let relay_map = RelayMap::try_from_iter([url])
+            .context("invalid relay URL")?;
+        builder = builder.relay_mode(RelayMode::Custom(relay_map));
+    }
+
+    let endpoint = builder
         .bind()
         .await
         .context("failed to bind iroh endpoint")?;

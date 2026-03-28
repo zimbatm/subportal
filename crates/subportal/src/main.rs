@@ -50,7 +50,11 @@ enum Command {
         icon: Option<String>,
     },
     /// Start the agent daemon
-    Agent,
+    Agent {
+        /// Use a custom relay server URL (e.g. https://relay.example.com)
+        #[arg(long)]
+        relay_url: Option<String>,
+    },
     /// Generate an enrollment ticket (requires running agent)
     Ticket {
         /// Token TTL in seconds
@@ -103,7 +107,7 @@ async fn main() -> ExitCode {
 
     let cli = Cli::parse();
     match cli.command {
-        Command::Agent => match agent::run().await {
+        Command::Agent { relay_url } => match agent::run(relay_url.as_deref()).await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("subportal agent: {e:#}");
