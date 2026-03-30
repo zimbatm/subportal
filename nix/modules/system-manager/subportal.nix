@@ -70,6 +70,9 @@ in
       wants = [ "network-online.target" ];
 
       serviceConfig = {
+        # Enable lingering so /run/user/<uid> persists without active
+        # login sessions (e.g. after SSH disconnect).
+        ExecStartPre = "+${pkgs.systemd}/bin/loginctl enable-linger ${cfg.agent.user}";
         ExecStart = "${cfg.package}/bin/subportal agent${
           lib.optionalString (cfg.relayUrl != null) " --relay-url ${cfg.relayUrl}"
         }";
