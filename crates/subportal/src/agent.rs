@@ -34,8 +34,7 @@ pub async fn run(relay_url: Option<&str>) -> Result<()> {
 
     if let Some(url) = relay_url {
         info!("using custom relay: {url}");
-        let relay_map = RelayMap::try_from_iter([url])
-            .context("invalid relay URL")?;
+        let relay_map = RelayMap::try_from_iter([url]).context("invalid relay URL")?;
         builder = builder.relay_mode(RelayMode::Custom(relay_map));
     }
 

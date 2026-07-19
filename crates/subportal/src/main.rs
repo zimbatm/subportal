@@ -1,8 +1,9 @@
 //! subportal -- server-side CLI for the subportal protocol.
 //!
-//! Provides `status`, `open`, and `notify` subcommands for interacting with
-//! the subportal agent from the server side, plus `agent`, `ticket`, `clients`,
-//! and `revoke` subcommands for managing the agent daemon and enrolled clients.
+//! Provides `status`, `open`, `notify`, and `confirm` subcommands for
+//! interacting with the subportal agent from the server side, plus `agent`,
+//! `ticket`, `clients`, and `revoke` subcommands for managing the agent daemon
+//! and enrolled clients.
 
 mod agent;
 mod enrollment;
@@ -48,6 +49,16 @@ enum Command {
         /// Icon name
         #[arg(short, long)]
         icon: Option<String>,
+    },
+    /// Ask the user a yes/no question on the client and wait for the answer
+    ///
+    /// Exit code: 0 = approved, 1 = denied/dismissed, 2 = could not ask.
+    Confirm {
+        /// The question / message to show
+        message: String,
+        /// Optional dialog title
+        #[arg(short, long)]
+        title: Option<String>,
     },
     /// Start the agent daemon
     Agent {
@@ -236,6 +247,36 @@ async fn main() -> ExitCode {
                 Err(e) => {
                     eprintln!("subportal: {}", e);
                     ExitCode::from(1)
+                }
+            }
+        }
+        Command::Confirm {
+            ref message,
+            ref title,
+        } => {
+            let client = Client::new();
+            let request = Request::Confirm {
+                message: message.clone(),
+                title: title.clone(),
+            };
+
+            match client.call(&request).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(ClientError::Protocol(SubportalError::UserDenied)) => {
+                    eprintln!("subportal: denied by the user");
+                    ExitCode::from(1)
+                }
+                Err(ClientError::DaemonUnreachable) => {
+                    daemon_unreachable_error(&client);
+                    ExitCode::from(2)
+                }
+                Err(ClientError::Protocol(SubportalError::NoClient)) => {
+                    no_desktop_error();
+                    ExitCode::from(2)
+                }
+                Err(e) => {
+                    eprintln!("subportal: {}", e);
+                    ExitCode::from(2)
                 }
             }
         }

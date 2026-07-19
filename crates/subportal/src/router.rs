@@ -23,6 +23,7 @@ pub fn strategy_for(request: &Request) -> Strategy {
     match request {
         Request::OpenURI { .. } => Strategy::PickBest("OpenURI"),
         Request::OpenFile { .. } => Strategy::PickBest("OpenFile"),
+        Request::Confirm { .. } => Strategy::PickBest("Confirm"),
         Request::Notify { .. } => Strategy::FanOut("Notify"),
         _ => Strategy::Direct,
     }
@@ -123,5 +124,12 @@ mod tests {
             Strategy::FanOut("Notify")
         ));
         assert!(matches!(strategy_for(&Request::Ping {}), Strategy::Direct));
+        assert!(matches!(
+            strategy_for(&Request::Confirm {
+                message: "ok?".into(),
+                title: None,
+            }),
+            Strategy::PickBest("Confirm")
+        ));
     }
 }

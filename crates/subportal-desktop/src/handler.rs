@@ -12,7 +12,7 @@ use tracing::{info, warn};
 use crate::{dismiss, portal};
 
 /// Capabilities advertised by the daemon.
-pub const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify"];
+pub const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify", "Confirm"];
 
 /// Handle a parsed request and return the response or error.
 ///
@@ -85,6 +85,23 @@ pub async fn handle(
                 dismiss::register(nid, dbus_id);
             }
             Ok(Response::Ok)
+        }
+        Request::Confirm {
+            ref message,
+            ref title,
+        } => {
+            info!("confirm: {message}");
+            let approved = portal::confirm(message, title.as_deref(), host)
+                .await
+                .map_err(|e| {
+                    warn!("confirm failed: {e:#}");
+                    SubportalError::UserDenied
+                })?;
+            if approved {
+                Ok(Response::Ok)
+            } else {
+                Err(SubportalError::UserDenied)
+            }
         }
         Request::NotifyDismiss { ref id } => {
             info!("notify_dismiss: {id}");
