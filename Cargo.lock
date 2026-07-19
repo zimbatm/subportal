@@ -3700,6 +3700,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "futures-util",
  "hex",
  "iroh",
  "libc",

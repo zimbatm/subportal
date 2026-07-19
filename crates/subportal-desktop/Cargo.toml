@@ -18,6 +18,7 @@ hex = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "signal"] }
 ashpd = { workspace = true }
 zbus = "5"
+futures-util = "0.3"
 url = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }

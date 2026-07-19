@@ -545,6 +545,9 @@ impl SubportalCore {
                 self.callback.on_dismiss_notification(id.clone());
                 Ok(Response::Ok)
             }
+            Request::Confirm { .. } => Err(ProtoError::NotSupported {
+                capability: "Confirm".into(),
+            }),
             Request::GenerateTicket { .. } => Err(ProtoError::NotSupported {
                 capability: "GenerateTicket".into(),
             }),

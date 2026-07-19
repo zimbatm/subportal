@@ -55,6 +55,17 @@ pub enum Request {
         urgency: Option<String>,
         icon: Option<String>,
     },
+    /// Ask the user a yes/no question on the client and wait for the answer.
+    ///
+    /// The client shows a notification with Approve/Deny actions and blocks
+    /// until the user responds. Replies with the generic success response when
+    /// approved, or the `io.subportal.UserDenied` error when declined,
+    /// dismissed, or timed out.
+    #[serde(rename = "io.subportal.Confirm")]
+    Confirm {
+        message: String,
+        title: Option<String>,
+    },
     /// Dismiss a notification by its ID across all connected devices.
     #[serde(rename = "io.subportal.NotifyDismiss")]
     NotifyDismiss { id: String },
@@ -306,6 +317,30 @@ mod tests {
             body: None,
             urgency: None,
             icon: None,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        let back: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_confirm_serde_round_trip() {
+        let req = Request::Confirm {
+            message: "Approve write operation?".into(),
+            title: Some("Approval required".into()),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["method"], "io.subportal.Confirm");
+        assert_eq!(json["parameters"]["message"], "Approve write operation?");
+        let back: Request = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn request_confirm_serde_round_trip_no_title() {
+        let req = Request::Confirm {
+            message: "Proceed?".into(),
+            title: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         let back: Request = serde_json::from_value(json).unwrap();
