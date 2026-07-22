@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use iroh::endpoint::{IdleTimeout, QuicTransportConfig};
 use subportal_iroh::consts::{ALPN, KEYPAIR_FILE};
 use subportal_iroh::control::{
     read_control, write_control, ClientHello, ControlMessage, FocusState, ServerHello,
@@ -74,6 +75,9 @@ pub trait SubportalCallback: Send + Sync {
         content_base64: String,
         host: String,
     ) -> bool;
+    /// Ask the user a yes/no question and block until they answer. Return true
+    /// if approved, false if denied, dismissed, or timed out.
+    fn on_confirm(&self, message: String, title: Option<String>, host: String) -> bool;
     /// A notification should be shown.
     fn on_notify(
         &self,
@@ -93,7 +97,24 @@ pub trait SubportalCallback: Send + Sync {
 // Capabilities advertised by the Android client
 // ---------------------------------------------------------------------------
 
-const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify"];
+const CAPABILITIES: &[&str] = &["OpenURI", "OpenFile", "Notify", "Confirm"];
+
+/// QUIC transport config for the client's connections.
+///
+/// A phone's link dies in ways that never send a FIN — NAT rebind, wifi<->
+/// cellular, doze freezing the socket. Without this, `accept_bi` blocks forever
+/// on a dead connection and the reconnect loop never runs. Keep-alive pings hold
+/// the path open under light churn; the idle timeout tears down a truly silent
+/// link within ~30s so we notice and reconnect.
+fn client_transport_config() -> QuicTransportConfig {
+    QuicTransportConfig::builder()
+        .keep_alive_interval(std::time::Duration::from_secs(10))
+        .max_idle_timeout(Some(
+            IdleTimeout::try_from(std::time::Duration::from_secs(30))
+                .expect("30s is a valid idle timeout"),
+        ))
+        .build()
+}
 
 // ---------------------------------------------------------------------------
 // SubportalCore (Kotlin calls this)
@@ -279,7 +300,12 @@ impl SubportalCore {
             }
         };
 
-        let endpoint = match iroh::Endpoint::builder().secret_key(key).bind().await {
+        let endpoint = match iroh::Endpoint::builder()
+            .transport_config(client_transport_config())
+            .secret_key(key)
+            .bind()
+            .await
+        {
             Ok(ep) => ep,
             Err(e) => {
                 warn!("failed to bind iroh endpoint: {e:#}");
@@ -545,9 +571,22 @@ impl SubportalCore {
                 self.callback.on_dismiss_notification(id.clone());
                 Ok(Response::Ok)
             }
-            Request::Confirm { .. } => Err(ProtoError::NotSupported {
-                capability: "Confirm".into(),
-            }),
+            Request::Confirm {
+                ref message,
+                ref title,
+            } => {
+                info!("confirm: {message}");
+                // Blocks this request task until the user answers or the client
+                // times out. First device to answer wins the race server-side.
+                let approved =
+                    self.callback
+                        .on_confirm(message.clone(), title.clone(), host.to_string());
+                if approved {
+                    Ok(Response::Ok)
+                } else {
+                    Err(ProtoError::UserDenied)
+                }
+            }
             Request::GenerateTicket { .. } => Err(ProtoError::NotSupported {
                 capability: "GenerateTicket".into(),
             }),

@@ -33,6 +33,7 @@
     <string name="event_open_uri">Open URI</string>
     <string name="event_open_file">Open File</string>
     <string name="event_notify">Notification</string>
+    <string name="event_confirm">Confirm</string>
     <string name="event_connected">Connected</string>
     <string name="event_disconnected">Disconnected</string>
     <string name="event_not_handled">Not handled</string>

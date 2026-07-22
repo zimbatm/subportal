@@ -661,35 +661,41 @@ internal interface UniffiCallbackInterfaceSubportalCallbackMethod1 : com.sun.jna
     fun callback(`uniffiHandle`: Long,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`contentBase64`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
 }
 internal interface UniffiCallbackInterfaceSubportalCallbackMethod2 : com.sun.jna.Callback {
-    fun callback(`uniffiHandle`: Long,`notificationId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`urgency`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+    fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
 }
 internal interface UniffiCallbackInterfaceSubportalCallbackMethod3 : com.sun.jna.Callback {
-    fun callback(`uniffiHandle`: Long,`id`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+    fun callback(`uniffiHandle`: Long,`notificationId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`urgency`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
 internal interface UniffiCallbackInterfaceSubportalCallbackMethod4 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`id`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceSubportalCallbackMethod5 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`serverName`: RustBuffer.ByValue,`connected`: Byte,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
-@Structure.FieldOrder("onOpenUri", "onOpenFile", "onNotify", "onDismissNotification", "onConnectionChanged", "uniffiFree")
+@Structure.FieldOrder("onOpenUri", "onOpenFile", "onConfirm", "onNotify", "onDismissNotification", "onConnectionChanged", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceSubportalCallback(
     @JvmField internal var `onOpenUri`: UniffiCallbackInterfaceSubportalCallbackMethod0? = null,
     @JvmField internal var `onOpenFile`: UniffiCallbackInterfaceSubportalCallbackMethod1? = null,
-    @JvmField internal var `onNotify`: UniffiCallbackInterfaceSubportalCallbackMethod2? = null,
-    @JvmField internal var `onDismissNotification`: UniffiCallbackInterfaceSubportalCallbackMethod3? = null,
-    @JvmField internal var `onConnectionChanged`: UniffiCallbackInterfaceSubportalCallbackMethod4? = null,
+    @JvmField internal var `onConfirm`: UniffiCallbackInterfaceSubportalCallbackMethod2? = null,
+    @JvmField internal var `onNotify`: UniffiCallbackInterfaceSubportalCallbackMethod3? = null,
+    @JvmField internal var `onDismissNotification`: UniffiCallbackInterfaceSubportalCallbackMethod4? = null,
+    @JvmField internal var `onConnectionChanged`: UniffiCallbackInterfaceSubportalCallbackMethod5? = null,
     @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
 ) : Structure() {
     class UniffiByValue(
         `onOpenUri`: UniffiCallbackInterfaceSubportalCallbackMethod0? = null,
         `onOpenFile`: UniffiCallbackInterfaceSubportalCallbackMethod1? = null,
-        `onNotify`: UniffiCallbackInterfaceSubportalCallbackMethod2? = null,
-        `onDismissNotification`: UniffiCallbackInterfaceSubportalCallbackMethod3? = null,
-        `onConnectionChanged`: UniffiCallbackInterfaceSubportalCallbackMethod4? = null,
+        `onConfirm`: UniffiCallbackInterfaceSubportalCallbackMethod2? = null,
+        `onNotify`: UniffiCallbackInterfaceSubportalCallbackMethod3? = null,
+        `onDismissNotification`: UniffiCallbackInterfaceSubportalCallbackMethod4? = null,
+        `onConnectionChanged`: UniffiCallbackInterfaceSubportalCallbackMethod5? = null,
         `uniffiFree`: UniffiCallbackInterfaceFree? = null,
-    ): UniffiVTableCallbackInterfaceSubportalCallback(`onOpenUri`,`onOpenFile`,`onNotify`,`onDismissNotification`,`onConnectionChanged`,`uniffiFree`,), Structure.ByValue
+    ): UniffiVTableCallbackInterfaceSubportalCallback(`onOpenUri`,`onOpenFile`,`onConfirm`,`onNotify`,`onDismissNotification`,`onConnectionChanged`,`uniffiFree`,), Structure.ByValue
 
    internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceSubportalCallback) {
         `onOpenUri` = other.`onOpenUri`
         `onOpenFile` = other.`onOpenFile`
+        `onConfirm` = other.`onConfirm`
         `onNotify` = other.`onNotify`
         `onDismissNotification` = other.`onDismissNotification`
         `onConnectionChanged` = other.`onConnectionChanged`
@@ -697,6 +703,7 @@ internal open class UniffiVTableCallbackInterfaceSubportalCallback(
     }
 
 }
+
 
 
 
@@ -817,6 +824,8 @@ fun uniffi_subportal_android_core_checksum_constructor_subportalcore_new(
 fun uniffi_subportal_android_core_checksum_method_subportalcallback_on_open_uri(
 ): Short
 fun uniffi_subportal_android_core_checksum_method_subportalcallback_on_open_file(
+): Short
+fun uniffi_subportal_android_core_checksum_method_subportalcallback_on_confirm(
 ): Short
 fun uniffi_subportal_android_core_checksum_method_subportalcallback_on_notify(
 ): Short
@@ -1057,13 +1066,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_open_file() != 48893.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_notify() != 23638.toShort()) {
+    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_confirm() != 18519.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_dismiss_notification() != 43985.toShort()) {
+    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_notify() != 57522.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_connection_changed() != 22685.toShort()) {
+    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_dismiss_notification() != 31747.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_connection_changed() != 7647.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1827,6 +1839,12 @@ public interface SubportalCallback {
     fun `onOpenFile`(`name`: kotlin.String, `mime`: kotlin.String, `contentBase64`: kotlin.String, `host`: kotlin.String): kotlin.Boolean
     
     /**
+     * Ask the user a yes/no question and block until they answer. Return true
+     * if approved, false if denied, dismissed, or timed out.
+     */
+    fun `onConfirm`(`message`: kotlin.String, `title`: kotlin.String?, `host`: kotlin.String): kotlin.Boolean
+    
+    /**
      * A notification should be shown.
      */
     fun `onNotify`(`notificationId`: kotlin.String, `title`: kotlin.String, `body`: kotlin.String?, `urgency`: kotlin.String?, `host`: kotlin.String)
@@ -1876,7 +1894,21 @@ internal object uniffiCallbackInterfaceSubportalCallback {
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
-    internal object `onNotify`: UniffiCallbackInterfaceSubportalCallbackMethod2 {
+    internal object `onConfirm`: UniffiCallbackInterfaceSubportalCallbackMethod2 {
+        override fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSubportalCallback.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onConfirm`(
+                    FfiConverterString.lift(`message`),
+                    FfiConverterOptionalString.lift(`title`),
+                    FfiConverterString.lift(`host`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `onNotify`: UniffiCallbackInterfaceSubportalCallbackMethod3 {
         override fun callback(`uniffiHandle`: Long,`notificationId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`urgency`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeSubportalCallback.handleMap.get(uniffiHandle)
             val makeCall = { ->
@@ -1892,7 +1924,7 @@ internal object uniffiCallbackInterfaceSubportalCallback {
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
-    internal object `onDismissNotification`: UniffiCallbackInterfaceSubportalCallbackMethod3 {
+    internal object `onDismissNotification`: UniffiCallbackInterfaceSubportalCallbackMethod4 {
         override fun callback(`uniffiHandle`: Long,`id`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeSubportalCallback.handleMap.get(uniffiHandle)
             val makeCall = { ->
@@ -1904,7 +1936,7 @@ internal object uniffiCallbackInterfaceSubportalCallback {
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
-    internal object `onConnectionChanged`: UniffiCallbackInterfaceSubportalCallbackMethod4 {
+    internal object `onConnectionChanged`: UniffiCallbackInterfaceSubportalCallbackMethod5 {
         override fun callback(`uniffiHandle`: Long,`serverName`: RustBuffer.ByValue,`connected`: Byte,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeSubportalCallback.handleMap.get(uniffiHandle)
             val makeCall = { ->
@@ -1927,6 +1959,7 @@ internal object uniffiCallbackInterfaceSubportalCallback {
     internal var vtable = UniffiVTableCallbackInterfaceSubportalCallback.UniffiByValue(
         `onOpenUri`,
         `onOpenFile`,
+        `onConfirm`,
         `onNotify`,
         `onDismissNotification`,
         `onConnectionChanged`,

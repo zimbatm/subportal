@@ -11,6 +11,7 @@ enum class EventType {
     OpenURI,
     OpenFile,
     Notify,
+    Confirm,
     Connected,
     Disconnected,
 }
