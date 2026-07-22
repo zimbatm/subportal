@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use iroh::endpoint::Connection;
 use iroh::{RelayMap, RelayMode};
+use std::time::Instant;
 use subportal_iroh::consts::{data_dir, ALPN, KEYPAIR_FILE};
 use subportal_iroh::control::{
     read_control, write_control, ClientHello, ControlMessage, FocusState, ServerHello,
@@ -180,9 +181,11 @@ async fn handle_iroh_connection(conn: Connection, hub: SharedHub) -> Result<()> 
     let connected = ConnectedClient {
         endpoint_id: remote_id_str.clone(),
         name: client_hello.name.clone(),
+        platform: client_hello.platform.clone(),
         connection: conn.clone(),
         focus: FocusState::Active,
         capabilities: client_hello.capabilities.clone(),
+        last_active: Instant::now(),
         control_tx,
     };
 
@@ -264,6 +267,23 @@ async fn accept_unix_loop(server: Server, hub: SharedHub) {
     }
 }
 
+/// Snapshot the capable clients for `cap`, best-first, cloning their iroh
+/// `Connection`s so QUIC I/O can proceed without holding the hub lock. The order
+/// is the routing/failover order from [`router::rank`].
+async fn ranked_connections(hub: &SharedHub, cap: &str) -> Vec<(String, Connection)> {
+    let hub_lock = hub.lock().await;
+    let infos = hub_lock.client_infos();
+    router::rank(&infos, cap)
+        .into_iter()
+        .filter_map(|info| {
+            hub_lock
+                .clients
+                .get(&info.endpoint_id)
+                .map(|c| (info.endpoint_id.clone(), c.connection.clone()))
+        })
+        .collect()
+}
+
 /// Handle a unix request, releasing the hub mutex before performing QUIC I/O.
 async fn handle_unix_request(
     hub: &SharedHub,
@@ -275,25 +295,65 @@ async fn handle_unix_request(
         Strategy::Direct => {
             // Fast path: lock hub, handle directly, unlock. No QUIC I/O.
             let mut hub_lock = hub.lock().await;
-            hub_lock.route_request(request).await
+            hub_lock.handle_direct(request).await
         }
-        Strategy::PickBest(cap) => {
-            // Lock hub, find best client and clone its Connection, then unlock
-            // before doing QUIC I/O.
-            let connection = {
-                let hub_lock = hub.lock().await;
-                let infos = hub_lock.client_infos();
-                let best = router::pick_best(&infos, cap).ok_or(SubportalError::NoClient)?;
-                let endpoint_id = &best.endpoint_id;
-                let client = hub_lock
-                    .clients
-                    .get(endpoint_id)
-                    .ok_or(SubportalError::NoClient)?;
-                client.connection.clone()
-            };
-            // Hub mutex is released here; perform QUIC I/O without the lock.
+        Strategy::Failover(cap) => {
+            // Single target: try the best device, fail over to the next only on
+            // a transport failure. A user decision (approve/deny) is final.
+            let targets = ranked_connections(hub, cap).await;
+            if targets.is_empty() {
+                return Err(SubportalError::NoClient);
+            }
             let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
-            send_to_connection(&connection, &value).await
+            let mut last_err = SubportalError::NoClient;
+            for (eid, connection) in targets {
+                match send_to_connection(&connection, &value).await {
+                    Ok(resp) => return Ok(resp),
+                    Err(SubportalError::NoClient) => {
+                        warn!(endpoint_id = %eid, "client unreachable, failing over");
+                        last_err = SubportalError::NoClient;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(last_err)
+        }
+        Strategy::Race(cap) => {
+            // Send to every capable device at once; the first user *decision*
+            // (approve or deny) wins. A transport failure doesn't decide — keep
+            // waiting on the others. Losing dialogs are abandoned when the
+            // JoinSet drops; they clear on their own client-side timeout.
+            // TODO: a Cancel control message would dismiss them immediately.
+            let targets = ranked_connections(hub, cap).await;
+            if targets.is_empty() {
+                return Err(SubportalError::NoClient);
+            }
+            let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
+            let mut set = tokio::task::JoinSet::new();
+            for (eid, connection) in targets {
+                let value = value.clone();
+                set.spawn(async move { (eid, send_to_connection(&connection, &value).await) });
+            }
+            let mut last_err = SubportalError::NoClient;
+            while let Some(joined) = set.join_next().await {
+                match joined {
+                    Ok((eid, Ok(resp))) => {
+                        info!(endpoint_id = %eid, "confirm approved");
+                        return Ok(resp);
+                    }
+                    // Device failed — it doesn't get a vote; wait on the rest.
+                    Ok((_eid, Err(SubportalError::NoClient))) => {
+                        last_err = SubportalError::NoClient;
+                    }
+                    // A real decision (e.g. UserDenied) from any device wins.
+                    Ok((eid, Err(e))) => {
+                        info!(endpoint_id = %eid, "confirm decided: {e}");
+                        return Err(e);
+                    }
+                    Err(_join_err) => {}
+                }
+            }
+            Err(last_err)
         }
         Strategy::FanOut(cap) => {
             // Lock hub, find targets, clone Connections, allocate notification_id,

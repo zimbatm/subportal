@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use iroh::endpoint::Connection;
 use iroh::TransportAddr;
@@ -11,15 +12,19 @@ use subportal_lib::protocol::{Request, Response, SubportalError, WireResponse};
 use tokio::sync::{mpsc, Mutex};
 use tracing::{info, warn};
 
-use crate::router::{self, ClientInfo, Strategy};
+use crate::router::ClientInfo;
 
 /// A connected client device.
 pub struct ConnectedClient {
     pub endpoint_id: String,
     pub name: String,
+    pub platform: String,
     pub connection: Connection,
     pub focus: FocusState,
     pub capabilities: Vec<String>,
+    /// When this client was last known to be in active use. Set on connect and
+    /// bumped whenever it reports focus → active; used for recency routing.
+    pub last_active: Instant,
     /// Channel for sending control messages to this client's control stream writer.
     pub control_tx: mpsc::Sender<ControlMessage>,
 }
@@ -75,9 +80,14 @@ impl Hub {
         }
     }
 
-    /// Update focus state for a client.
+    /// Update focus state for a client. A transition to `Active` is a "the user
+    /// is here now" signal, so bump `last_active` to make this client the
+    /// freshest for recency-based routing.
     pub fn update_focus(&mut self, endpoint_id: &str, state: FocusState) {
         if let Some(c) = self.clients.get_mut(endpoint_id) {
+            if state == FocusState::Active {
+                c.last_active = Instant::now();
+            }
             c.focus = state;
         }
     }
@@ -96,107 +106,44 @@ impl Hub {
                 endpoint_id: c.endpoint_id.clone(),
                 focus: c.focus,
                 capabilities: c.capabilities.clone(),
+                platform: c.platform.clone(),
+                last_active: c.last_active,
             })
             .collect()
     }
 
-    /// Route a request to the appropriate client(s) and return the response.
-    pub async fn route_request(&mut self, request: &Request) -> Result<Response, SubportalError> {
-        let strategy = router::strategy_for(request);
-
-        match strategy {
-            Strategy::Direct => {
-                // Agent responds directly
-                match request {
-                    Request::Ping {} => {
-                        let mut all_caps: Vec<String> = self
-                            .clients
-                            .values()
-                            .flat_map(|c| c.capabilities.iter().cloned())
-                            .collect();
-                        all_caps.sort();
-                        all_caps.dedup();
-                        let mut client_names: Vec<String> =
-                            self.clients.values().map(|c| c.name.clone()).collect();
-                        client_names.sort();
-                        let endpoint_id = self.endpoint.addr().id.to_string();
-                        Ok(Response::Ping {
-                            capabilities: all_caps,
-                            version: VERSION.to_string(),
-                            clients: client_names,
-                            endpoint_id,
-                        })
-                    }
-                    Request::NotifyDismiss { id } => {
-                        self.broadcast_dismiss(id, None).await;
-                        Ok(Response::Ok)
-                    }
-                    Request::GenerateTicket { ttl } => self.generate_ticket(*ttl),
-                    Request::RevokeClient { name_or_id } => self.revoke_client(name_or_id).await,
-                    _ => Ok(Response::Ok),
-                }
-            }
-            Strategy::PickBest(cap) => {
-                let infos = self.client_infos();
-                let best = router::pick_best(&infos, cap).ok_or(SubportalError::NoClient)?;
-                let endpoint_id = best.endpoint_id.clone();
-                let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
-                self.send_to_client(&endpoint_id, &value).await
-            }
-            Strategy::FanOut(cap) => {
-                let infos = self.client_infos();
-                let targets = router::fan_out(&infos, cap);
-                if targets.is_empty() {
-                    return Err(SubportalError::NoClient);
-                }
-
-                let notification_id = self.next_notification_id();
-                let sent_to: Vec<String> = targets.iter().map(|c| c.endpoint_id.clone()).collect();
-
-                // Serialize the request and inject notification_id so clients
-                // can map their local D-Bus IDs back to this agent-level ID.
-                let mut value =
-                    serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
-                if let Some(params) = value.get_mut("parameters").and_then(|v| v.as_object_mut()) {
-                    params.insert(
-                        "notification_id".into(),
-                        serde_json::Value::String(notification_id.clone()),
-                    );
-                }
-
-                // Send to all targets
-                for target in &targets {
-                    let eid = target.endpoint_id.clone();
-                    if let Err(e) = self.send_to_client(&eid, &value).await {
-                        warn!(
-                            endpoint_id = %eid,
-                            "failed to fan-out to client: {e}"
-                        );
-                    }
-                }
-
-                self.pending_notifications
-                    .insert(notification_id.clone(), NotificationState { sent_to });
-
-                Ok(Response::NotifyDelivered {
-                    id: notification_id,
+    /// Handle a request the agent answers itself, with no client I/O (`Ping`,
+    /// `NotifyDismiss`, `GenerateTicket`, `RevokeClient`). Requests that need a
+    /// client are dispatched by the agent's per-strategy path instead.
+    pub async fn handle_direct(&mut self, request: &Request) -> Result<Response, SubportalError> {
+        match request {
+            Request::Ping {} => {
+                let mut all_caps: Vec<String> = self
+                    .clients
+                    .values()
+                    .flat_map(|c| c.capabilities.iter().cloned())
+                    .collect();
+                all_caps.sort();
+                all_caps.dedup();
+                let mut client_names: Vec<String> =
+                    self.clients.values().map(|c| c.name.clone()).collect();
+                client_names.sort();
+                let endpoint_id = self.endpoint.addr().id.to_string();
+                Ok(Response::Ping {
+                    capabilities: all_caps,
+                    version: VERSION.to_string(),
+                    clients: client_names,
+                    endpoint_id,
                 })
             }
+            Request::NotifyDismiss { id } => {
+                self.broadcast_dismiss(id, None).await;
+                Ok(Response::Ok)
+            }
+            Request::GenerateTicket { ttl } => self.generate_ticket(*ttl),
+            Request::RevokeClient { name_or_id } => self.revoke_client(name_or_id).await,
+            _ => Ok(Response::Ok),
         }
-    }
-
-    /// Send a request to a specific connected client via a new QUIC bi-stream.
-    async fn send_to_client(
-        &self,
-        endpoint_id: &str,
-        req: &serde_json::Value,
-    ) -> Result<Response, SubportalError> {
-        let client = self
-            .clients
-            .get(endpoint_id)
-            .ok_or(SubportalError::NoClient)?;
-
-        send_to_connection(&client.connection, req).await
     }
 
     /// Broadcast a dismiss notification to all clients except the originator.

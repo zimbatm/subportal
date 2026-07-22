@@ -121,13 +121,22 @@ client(s) over these persistent connections.
 
 ## Routing
 
-The agent uses different routing strategies depending on the request type:
+The agent chooses a strategy per request type. Candidate clients are ranked by
+a deterministic total order -- active focus first, then most-recently-active,
+then a stable id tiebreak -- so with several clients connected the choice is
+never arbitrary.
 
-- **PickBest** (OpenURI, OpenFile) -- sent to the single best client
-  (prefers active over idle focus state)
-- **FanOut** (Notify) -- sent to all connected clients with the capability
+- **Failover** (OpenURI, OpenFile) -- sent to the single best client, failing
+  over to the next *only* if a device is unreachable. A user decision (approve
+  or deny) is final and returned as-is, not retried elsewhere.
+- **Race** (Confirm) -- sent to every capable client at once; the first user
+  *decision* wins, so you can approve from whichever device you're actually at.
+  A transport failure doesn't count as a decision. (Losing dialogs currently
+  clear on their own client-side timeout; a dedicated cancel message is a
+  follow-up.)
+- **FanOut** (Notify) -- sent to all connected clients with the capability.
 - **Direct** (Ping, GenerateTicket, RevokeClient) -- handled by the agent
-  itself without forwarding to clients
+  itself without forwarding to clients.
 
 ## Enrollment
 
