@@ -192,7 +192,11 @@ async fn handle_iroh_connection(conn: Connection, hub: SharedHub) -> Result<()> 
     {
         let mut hub_lock = hub.lock().await;
         hub_lock.add_client(connected);
-        hub_lock.registry.touch(&remote_id_str).await.ok();
+        hub_lock
+            .registry
+            .touch(&remote_id_str, &client_hello.capabilities)
+            .await
+            .ok();
     }
 
     // Spawn writer for outgoing control messages
