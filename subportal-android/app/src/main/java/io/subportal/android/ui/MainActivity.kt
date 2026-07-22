@@ -23,13 +23,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         requestNotificationPermission()
-        startSubportalService()
+        startSubportalService(intent?.getStringExtra(SubportalService.EXTRA_ENROLL_TICKET))
 
         setContent {
             SubportalTheme {
                 val navController = rememberNavController()
                 SubportalNavGraph(navController = navController)
             }
+        }
+    }
+
+    // Re-deliver an enrollment ticket when the activity is already running.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(SubportalService.EXTRA_ENROLL_TICKET)?.let {
+            startSubportalService(it)
         }
     }
 
@@ -45,8 +54,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startSubportalService() {
+    private fun startSubportalService(enrollTicket: String? = null) {
         val intent = Intent(this, SubportalService::class.java)
+        if (enrollTicket != null) {
+            intent.putExtra(SubportalService.EXTRA_ENROLL_TICKET, enrollTicket)
+        }
         ContextCompat.startForegroundService(this, intent)
     }
 }

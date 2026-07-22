@@ -325,6 +325,7 @@ private fun EventRow(event: EventRecord) {
         EventType.OpenURI -> stringResource(R.string.event_open_uri)
         EventType.OpenFile -> stringResource(R.string.event_open_file)
         EventType.Notify -> stringResource(R.string.event_notify)
+        EventType.Confirm -> stringResource(R.string.event_confirm)
         EventType.Connected -> stringResource(R.string.event_connected)
         EventType.Disconnected -> stringResource(R.string.event_disconnected)
     }

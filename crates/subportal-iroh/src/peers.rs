@@ -87,14 +87,21 @@ impl ClientRegistry {
         &self.clients
     }
 
-    /// Update the last_seen timestamp for a client.
-    pub async fn touch(&mut self, endpoint_id: &str) -> anyhow::Result<()> {
+    /// Refresh a client's last_seen and capabilities on reconnect. Capabilities
+    /// can change across app upgrades, so re-record them from the live hello
+    /// instead of leaving the stale set captured at enrollment.
+    pub async fn touch(
+        &mut self,
+        endpoint_id: &str,
+        capabilities: &[String],
+    ) -> anyhow::Result<()> {
         if let Some(c) = self
             .clients
             .iter_mut()
             .find(|c| c.endpoint_id == endpoint_id)
         {
             c.last_seen = Some(Utc::now());
+            c.capabilities = capabilities.to_vec();
             self.save().await?;
         }
         Ok(())

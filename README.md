@@ -62,6 +62,7 @@ The [documentation](docs/index.md) is organized using the
   - [Nix modules](docs/reference/nix-modules.md)
 - **Explanation** -- design and rationale
   - [Architecture](docs/explanation/architecture.md)
+  - [Multi-client routing](docs/explanation/routing.md)
   - [Security model](docs/explanation/security.md)
 
 ## V1 capabilities

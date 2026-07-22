@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import io.subportal.android.handlers.OpenFileHandler
 import io.subportal.android.handlers.OpenUriHandler
+import io.subportal.android.notifications.ConfirmManager
 import io.subportal.android.notifications.NotificationHelper
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -44,6 +45,16 @@ class SubportalCallbackImpl(
         val handled = OpenFileHandler.open(context, name, mime, contentBase64, host)
         EventLog.record(host, EventType.OpenFile, "$name ($mime)", handled)
         return handled
+    }
+
+    // Blocks the calling Rust thread until the user answers. The server races
+    // this across every capable device; first answer wins.
+    override fun onConfirm(message: String, title: String?, host: String): Boolean {
+        Log.i(TAG, "onConfirm: $message from $host")
+        val approved = ConfirmManager.awaitDecision(context, message, title, host)
+        val summary = title?.let { "$it: $message" } ?: message
+        EventLog.record(host, EventType.Confirm, summary, approved)
+        return approved
     }
 
     override fun onNotify(
