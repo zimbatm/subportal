@@ -266,6 +266,10 @@ async fn main() -> ExitCode {
                     eprintln!("subportal: denied by the user");
                     ExitCode::from(1)
                 }
+                Err(ClientError::Protocol(SubportalError::NoDecision)) => {
+                    eprintln!("subportal: prompt expired without an answer");
+                    ExitCode::from(1)
+                }
                 Err(ClientError::DaemonUnreachable) => {
                     daemon_unreachable_error(&client);
                     ExitCode::from(2)

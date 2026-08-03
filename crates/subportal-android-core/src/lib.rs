@@ -50,6 +50,16 @@ impl From<anyhow::Error> for SubportalError {
 // UniFFI data types
 // ---------------------------------------------------------------------------
 
+/// Outcome of a confirmation prompt, reported by the Kotlin layer.
+/// NoDecision (timeout, prompt never shown) is not a Denied: the server races
+/// confirms across devices and only a real user answer may decide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ConfirmDecision {
+    Approved,
+    Denied,
+    NoDecision,
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct ServerInfo {
     pub id: String,
@@ -75,9 +85,13 @@ pub trait SubportalCallback: Send + Sync {
         content_base64: String,
         host: String,
     ) -> bool;
-    /// Ask the user a yes/no question and block until they answer. Return true
-    /// if approved, false if denied, dismissed, or timed out.
-    fn on_confirm(&self, message: String, title: Option<String>, host: String) -> bool;
+    /// Ask the user a yes/no question and block until they answer.
+    fn on_confirm(
+        &self,
+        message: String,
+        title: Option<String>,
+        host: String,
+    ) -> ConfirmDecision;
     /// A notification should be shown.
     fn on_notify(
         &self,
@@ -578,13 +592,13 @@ impl SubportalCore {
                 info!("confirm: {message}");
                 // Blocks this request task until the user answers or the client
                 // times out. First device to answer wins the race server-side.
-                let approved =
+                let decision =
                     self.callback
                         .on_confirm(message.clone(), title.clone(), host.to_string());
-                if approved {
-                    Ok(Response::Ok)
-                } else {
-                    Err(ProtoError::UserDenied)
+                match decision {
+                    ConfirmDecision::Approved => Ok(Response::Ok),
+                    ConfirmDecision::Denied => Err(ProtoError::UserDenied),
+                    ConfirmDecision::NoDecision => Err(ProtoError::NoDecision),
                 }
             }
             Request::GenerateTicket { .. } => Err(ProtoError::NotSupported {

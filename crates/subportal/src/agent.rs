@@ -305,22 +305,12 @@ async fn handle_unix_request(
             // Single target: try the best device, fail over to the next only on
             // a transport failure. A user decision (approve/deny) is final.
             let targets = ranked_connections(hub, cap).await;
-            if targets.is_empty() {
-                return Err(SubportalError::NoClient);
-            }
             let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
-            let mut last_err = SubportalError::NoClient;
-            for (eid, connection) in targets {
-                match send_to_connection(&connection, &value).await {
-                    Ok(resp) => return Ok(resp),
-                    Err(SubportalError::NoClient) => {
-                        warn!(endpoint_id = %eid, "client unreachable, failing over");
-                        last_err = SubportalError::NoClient;
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-            Err(last_err)
+            router::failover_decision(targets, |connection| {
+                let value = value.clone();
+                async move { send_to_connection(&connection, &value).await }
+            })
+            .await
         }
         Strategy::Race(cap) => {
             // Send to every capable device at once; the first user *decision*
@@ -329,35 +319,13 @@ async fn handle_unix_request(
             // JoinSet drops; they clear on their own client-side timeout.
             // TODO: a Cancel control message would dismiss them immediately.
             let targets = ranked_connections(hub, cap).await;
-            if targets.is_empty() {
-                return Err(SubportalError::NoClient);
-            }
             let value = serde_json::to_value(request).map_err(|_| SubportalError::NoClient)?;
             let mut set = tokio::task::JoinSet::new();
             for (eid, connection) in targets {
                 let value = value.clone();
                 set.spawn(async move { (eid, send_to_connection(&connection, &value).await) });
             }
-            let mut last_err = SubportalError::NoClient;
-            while let Some(joined) = set.join_next().await {
-                match joined {
-                    Ok((eid, Ok(resp))) => {
-                        info!(endpoint_id = %eid, "confirm approved");
-                        return Ok(resp);
-                    }
-                    // Device failed — it doesn't get a vote; wait on the rest.
-                    Ok((_eid, Err(SubportalError::NoClient))) => {
-                        last_err = SubportalError::NoClient;
-                    }
-                    // A real decision (e.g. UserDenied) from any device wins.
-                    Ok((eid, Err(e))) => {
-                        info!(endpoint_id = %eid, "confirm decided: {e}");
-                        return Err(e);
-                    }
-                    Err(_join_err) => {}
-                }
-            }
-            Err(last_err)
+            router::race_decision(set).await
         }
         Strategy::FanOut(cap) => {
             // Lock hub, find targets, clone Connections, allocate notification_id,

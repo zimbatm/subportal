@@ -1,7 +1,9 @@
+use std::future::Future;
 use std::time::Instant;
 
 use subportal_iroh::control::FocusState;
-use subportal_lib::protocol::Request;
+use subportal_lib::protocol::{Request, Response, SubportalError};
+use tracing::{info, warn};
 
 /// Metadata about a connected client, used for routing decisions.
 pub struct ClientInfo {
@@ -69,6 +71,63 @@ fn focus_rank(focus: FocusState) -> u8 {
     match focus {
         FocusState::Active => 0,
         FocusState::Idle => 1,
+    }
+}
+
+/// Resolve a Failover dispatch: try targets in ranked order via `send`.
+/// A transport failure (`NoClient`) moves on to the next target; any other
+/// outcome — success or a user decision like `UserDenied` — is final.
+pub async fn failover_decision<T, F, Fut>(
+    targets: Vec<(String, T)>,
+    mut send: F,
+) -> Result<Response, SubportalError>
+where
+    F: FnMut(T) -> Fut,
+    Fut: Future<Output = Result<Response, SubportalError>>,
+{
+    for (eid, target) in targets {
+        match send(target).await {
+            Ok(resp) => return Ok(resp),
+            Err(SubportalError::NoClient) => {
+                warn!(endpoint_id = %eid, "client unreachable, failing over");
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(SubportalError::NoClient)
+}
+
+/// Resolve a Race dispatch: the first user *decision* wins — an approval
+/// (`Ok`) or a denial. `NoClient` (unreachable) and `NoDecision` (prompt
+/// expired unanswered) don't get a vote: a device timing out at 60s must not
+/// veto the user approving at 61s on another device. When nobody decides:
+/// `NoDecision` if at least one device was asked, else `NoClient`.
+pub async fn race_decision(
+    mut set: tokio::task::JoinSet<(String, Result<Response, SubportalError>)>,
+) -> Result<Response, SubportalError> {
+    let mut asked_without_answer = false;
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok((eid, Ok(resp))) => {
+                info!(endpoint_id = %eid, "confirm approved");
+                return Ok(resp);
+            }
+            Ok((_eid, Err(SubportalError::NoClient))) => {}
+            Ok((_eid, Err(SubportalError::NoDecision))) => {
+                asked_without_answer = true;
+            }
+            // A real decision (e.g. UserDenied) from any device wins.
+            Ok((eid, Err(e))) => {
+                info!(endpoint_id = %eid, "confirm decided: {e}");
+                return Err(e);
+            }
+            Err(_join_err) => {}
+        }
+    }
+    if asked_without_answer {
+        Err(SubportalError::NoDecision)
+    } else {
+        Err(SubportalError::NoClient)
     }
 }
 
@@ -188,6 +247,172 @@ mod tests {
         ];
         let result = fan_out(&clients, "Notify");
         assert_eq!(result.len(), 2);
+    }
+
+    // -- failover_decision ---------------------------------------------------
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    type Outcome = Result<Response, SubportalError>;
+
+    fn target(id: &str, outcome: Outcome) -> (String, Outcome) {
+        (id.into(), outcome)
+    }
+
+    /// Wrap outcomes in a send fn that counts how many targets were tried.
+    fn counting_send(
+        calls: &Arc<AtomicUsize>,
+    ) -> impl FnMut(Outcome) -> std::future::Ready<Outcome> {
+        let calls = calls.clone();
+        move |o| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(o)
+        }
+    }
+
+    #[tokio::test]
+    async fn failover_empty_is_no_client() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let r = failover_decision(vec![], counting_send(&calls)).await;
+        assert_eq!(r, Err(SubportalError::NoClient));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn failover_skips_unreachable_client() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let targets = vec![
+            target("dead", Err(SubportalError::NoClient)),
+            target("alive", Ok(Response::Ok)),
+        ];
+        let r = failover_decision(targets, counting_send(&calls)).await;
+        assert_eq!(r, Ok(Response::Ok));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn failover_first_success_stops() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let targets = vec![
+            target("a", Ok(Response::Ok)),
+            target("b", Ok(Response::Ok)),
+        ];
+        let r = failover_decision(targets, counting_send(&calls)).await;
+        assert_eq!(r, Ok(Response::Ok));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A denial must not fail over: the user already answered.
+    #[tokio::test]
+    async fn failover_user_decision_is_final() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let targets = vec![
+            target("denier", Err(SubportalError::UserDenied)),
+            target("next", Ok(Response::Ok)),
+        ];
+        let r = failover_decision(targets, counting_send(&calls)).await;
+        assert_eq!(r, Err(SubportalError::UserDenied));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn failover_all_unreachable_is_no_client() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let targets = vec![
+            target("a", Err(SubportalError::NoClient)),
+            target("b", Err(SubportalError::NoClient)),
+        ];
+        let r = failover_decision(targets, counting_send(&calls)).await;
+        assert_eq!(r, Err(SubportalError::NoClient));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    // -- race_decision -------------------------------------------------------
+
+    /// Build a JoinSet where each task resolves to `outcome` after `delay_ms`.
+    /// Paused-clock tests make the ordering deterministic.
+    fn race_set(tasks: Vec<(&str, u64, Outcome)>) -> tokio::task::JoinSet<(String, Outcome)> {
+        let mut set = tokio::task::JoinSet::new();
+        for (eid, delay_ms, outcome) in tasks {
+            let eid = eid.to_string();
+            set.spawn(async move {
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                (eid, outcome)
+            });
+        }
+        set
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_empty_is_no_client() {
+        let r = race_decision(tokio::task::JoinSet::new()).await;
+        assert_eq!(r, Err(SubportalError::NoClient));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_approval_wins() {
+        let set = race_set(vec![
+            ("fast-approve", 10, Ok(Response::Ok)),
+            ("slow-deny", 100, Err(SubportalError::UserDenied)),
+        ]);
+        assert_eq!(race_decision(set).await, Ok(Response::Ok));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_denial_wins() {
+        let set = race_set(vec![
+            ("fast-deny", 10, Err(SubportalError::UserDenied)),
+            ("slow-approve", 100, Ok(Response::Ok)),
+        ]);
+        assert_eq!(race_decision(set).await, Err(SubportalError::UserDenied));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_transport_failure_does_not_decide() {
+        let set = race_set(vec![
+            ("dead", 10, Err(SubportalError::NoClient)),
+            ("alive", 100, Ok(Response::Ok)),
+        ]);
+        assert_eq!(race_decision(set).await, Ok(Response::Ok));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_all_unreachable_is_no_client() {
+        let set = race_set(vec![
+            ("a", 10, Err(SubportalError::NoClient)),
+            ("b", 20, Err(SubportalError::NoClient)),
+        ]);
+        assert_eq!(race_decision(set).await, Err(SubportalError::NoClient));
+    }
+
+    /// A prompt expiring unanswered on one device must not veto the user
+    /// approving later on another.
+    #[tokio::test(start_paused = true)]
+    async fn race_unanswered_prompt_does_not_decide() {
+        let set = race_set(vec![
+            ("timed-out", 10, Err(SubportalError::NoDecision)),
+            ("slow-approve", 100, Ok(Response::Ok)),
+        ]);
+        assert_eq!(race_decision(set).await, Ok(Response::Ok));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_all_unanswered_is_no_decision() {
+        let set = race_set(vec![
+            ("a", 10, Err(SubportalError::NoDecision)),
+            ("b", 20, Err(SubportalError::NoDecision)),
+        ]);
+        assert_eq!(race_decision(set).await, Err(SubportalError::NoDecision));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn race_unanswered_beats_unreachable_in_reporting() {
+        let set = race_set(vec![
+            ("dead", 10, Err(SubportalError::NoClient)),
+            ("asked", 20, Err(SubportalError::NoDecision)),
+        ]);
+        assert_eq!(race_decision(set).await, Err(SubportalError::NoDecision));
     }
 
     #[test]
