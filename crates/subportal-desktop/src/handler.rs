@@ -91,16 +91,17 @@ pub async fn handle(
             ref title,
         } => {
             info!("confirm: {message}");
-            let approved = portal::confirm(message, title.as_deref(), host)
+            // Can't show the prompt -> abstain; another device may still ask.
+            let decision = portal::confirm(message, title.as_deref(), host)
                 .await
                 .map_err(|e| {
                     warn!("confirm failed: {e:#}");
-                    SubportalError::UserDenied
+                    SubportalError::NoDecision
                 })?;
-            if approved {
-                Ok(Response::Ok)
-            } else {
-                Err(SubportalError::UserDenied)
+            match decision {
+                portal::ConfirmDecision::Approved => Ok(Response::Ok),
+                portal::ConfirmDecision::Denied => Err(SubportalError::UserDenied),
+                portal::ConfirmDecision::NoDecision => Err(SubportalError::NoDecision),
             }
         }
         Request::NotifyDismiss { ref id } => {

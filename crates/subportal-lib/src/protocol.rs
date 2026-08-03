@@ -104,6 +104,10 @@ pub enum Response {
 pub enum SubportalError {
     #[error("user denied the request")]
     UserDenied,
+    /// Prompt ended without a user answer (expired, superseded, unshowable).
+    /// Not a decision: must not veto an answer from another device.
+    #[error("prompt closed without a user decision")]
+    NoDecision,
     #[error("capability not supported: {capability}")]
     NotSupported { capability: String },
     #[error("file too large (max {max_bytes} bytes)")]
@@ -118,6 +122,7 @@ impl SubportalError {
     pub fn wire_id(&self) -> &'static str {
         match self {
             Self::UserDenied => "io.subportal.UserDenied",
+            Self::NoDecision => "io.subportal.NoDecision",
             Self::NotSupported { .. } => "io.subportal.NotSupported",
             Self::FileTooLarge { .. } => "io.subportal.FileTooLarge",
             Self::NoClient => "io.subportal.NoClient",
@@ -128,6 +133,7 @@ impl SubportalError {
     pub fn from_wire(id: &str, parameters: &serde_json::Value) -> Option<Self> {
         match id {
             "io.subportal.UserDenied" => Some(Self::UserDenied),
+            "io.subportal.NoDecision" => Some(Self::NoDecision),
             "io.subportal.NotSupported" => {
                 let capability = parameters
                     .get("capability")
@@ -478,6 +484,7 @@ mod tests {
     fn error_wire_round_trip() {
         let errors = [
             SubportalError::UserDenied,
+            SubportalError::NoDecision,
             SubportalError::NotSupported {
                 capability: "OpenFile".into(),
             },

@@ -661,7 +661,7 @@ internal interface UniffiCallbackInterfaceSubportalCallbackMethod1 : com.sun.jna
     fun callback(`uniffiHandle`: Long,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`contentBase64`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
 }
 internal interface UniffiCallbackInterfaceSubportalCallbackMethod2 : com.sun.jna.Callback {
-    fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+    fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
 }
 internal interface UniffiCallbackInterfaceSubportalCallbackMethod3 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`notificationId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`urgency`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
@@ -1066,7 +1066,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_open_file() != 48893.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_confirm() != 18519.toShort()) {
+    if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_confirm() != 21090.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_subportal_android_core_checksum_method_subportalcallback_on_notify() != 57522.toShort()) {
@@ -1765,6 +1765,44 @@ public object FfiConverterTypeServerInfo: FfiConverterRustBuffer<ServerInfo> {
 
 
 
+/**
+ * Outcome of a confirmation prompt, reported by the Kotlin layer.
+ *
+ * NoDecision (timeout, prompt never shown) is distinct from Denied on
+ * purpose: the server races confirms across devices, and only a real user
+ * answer may decide the race.
+ */
+
+enum class ConfirmDecision {
+    
+    APPROVED,
+    DENIED,
+    NO_DECISION;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeConfirmDecision: FfiConverterRustBuffer<ConfirmDecision> {
+    override fun read(buf: ByteBuffer) = try {
+        ConfirmDecision.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ConfirmDecision) = 4UL
+
+    override fun write(value: ConfirmDecision, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 
 sealed class SubportalException: kotlin.Exception() {
@@ -1839,10 +1877,11 @@ public interface SubportalCallback {
     fun `onOpenFile`(`name`: kotlin.String, `mime`: kotlin.String, `contentBase64`: kotlin.String, `host`: kotlin.String): kotlin.Boolean
     
     /**
-     * Ask the user a yes/no question and block until they answer. Return true
-     * if approved, false if denied, dismissed, or timed out.
+     * Ask the user a yes/no question and block until they answer. Approved or
+     * Denied only for an actual user gesture; NoDecision when the prompt
+     * timed out or couldn't be shown.
      */
-    fun `onConfirm`(`message`: kotlin.String, `title`: kotlin.String?, `host`: kotlin.String): kotlin.Boolean
+    fun `onConfirm`(`message`: kotlin.String, `title`: kotlin.String?, `host`: kotlin.String): ConfirmDecision
     
     /**
      * A notification should be shown.
@@ -1895,7 +1934,7 @@ internal object uniffiCallbackInterfaceSubportalCallback {
         }
     }
     internal object `onConfirm`: UniffiCallbackInterfaceSubportalCallbackMethod2 {
-        override fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+        override fun callback(`uniffiHandle`: Long,`message`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
             val uniffiObj = FfiConverterTypeSubportalCallback.handleMap.get(uniffiHandle)
             val makeCall = { ->
                 uniffiObj.`onConfirm`(
@@ -1904,7 +1943,7 @@ internal object uniffiCallbackInterfaceSubportalCallback {
                     FfiConverterString.lift(`host`),
                 )
             }
-            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            val writeReturn = { value: ConfirmDecision -> uniffiOutReturn.setValue(FfiConverterTypeConfirmDecision.lower(value)) }
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }

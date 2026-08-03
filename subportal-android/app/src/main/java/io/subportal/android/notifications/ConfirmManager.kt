@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import uniffi.subportal_android_core.ConfirmDecision
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -15,9 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * Handles Confirm requests: pop a heads-up notification with Approve/Deny and
  * block the calling (Rust) thread until the user answers.
  *
- * The server races the prompt across every Confirm-capable device; the first to
- * answer wins. Losing prompts get no cancel message yet, so they linger until
- * [TIMEOUT_MS] elapses and we auto-deny.
+ * The server races the prompt across every Confirm-capable device; the first
+ * user answer wins. A timeout is NO_DECISION, not a deny.
  */
 object ConfirmManager {
     private const val TAG = "ConfirmManager"
@@ -33,22 +33,28 @@ object ConfirmManager {
 
     // A capacity-1 queue per in-flight confirm; an answer that arrives before we
     // start polling is buffered rather than lost.
-    private val pending = ConcurrentHashMap<String, ArrayBlockingQueue<Boolean>>()
+    private val pending = ConcurrentHashMap<String, ArrayBlockingQueue<ConfirmDecision>>()
 
     /** Show the prompt and block until answered, dismissed, or timed out. */
-    fun awaitDecision(context: Context, message: String, title: String?, host: String): Boolean {
-        val id = "confirm-" + nextAndroidId.get()
-        val androidId = nextAndroidId.incrementAndGet()
-        val queue = ArrayBlockingQueue<Boolean>(1)
+    fun awaitDecision(
+        context: Context,
+        message: String,
+        title: String?,
+        host: String,
+    ): ConfirmDecision {
+        // Single atomic op so concurrent confirms can't share an id.
+        val androidId = nextAndroidId.getAndIncrement()
+        val id = "confirm-$androidId"
+        val queue = ArrayBlockingQueue<ConfirmDecision>(1)
         pending[id] = queue
         try {
             show(context, androidId, id, message, title, host)
-            val approved = queue.poll(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            if (approved == null) {
-                Log.i(TAG, "confirm $id timed out -> deny")
-                return false
+            val decision = queue.poll(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            if (decision == null) {
+                Log.i(TAG, "confirm $id timed out -> no decision")
+                return ConfirmDecision.NO_DECISION
             }
-            return approved
+            return decision
         } finally {
             pending.remove(id)
             context.getSystemService(NotificationManager::class.java).cancel(androidId)
@@ -57,7 +63,8 @@ object ConfirmManager {
 
     /** Deliver a user decision from [ConfirmActionReceiver]. */
     fun submit(id: String, approved: Boolean) {
-        pending[id]?.offer(approved) ?: Log.w(TAG, "decision for unknown confirm $id")
+        val decision = if (approved) ConfirmDecision.APPROVED else ConfirmDecision.DENIED
+        pending[id]?.offer(decision) ?: Log.w(TAG, "decision for unknown confirm $id")
     }
 
     private fun show(

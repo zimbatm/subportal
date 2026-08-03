@@ -14,8 +14,13 @@ use base64::Engine;
 use zbus::zvariant::Value;
 use zbus::Connection;
 
-/// How long a confirmation prompt waits for the user before resolving as denied.
+/// How long a confirmation prompt waits for the user before giving up.
 const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// `NotificationClosed` reason code for "dismissed by the user" — the only
+/// close that is an actual answer. 1 = expired, 3 = CloseNotification call.
+/// https://specifications.freedesktop.org/notification-spec/latest/protocol.html#signal-notification-closed
+const REASON_DISMISSED: u32 = 2;
 
 /// Open a URI in the user's default application, showing a confirmation dialog.
 pub async fn open_uri(uri: &str) -> anyhow::Result<()> {
@@ -147,16 +152,66 @@ trait Notifications {
     fn notification_closed(&self, id: u32, reason: u32) -> zbus::Result<()>;
 }
 
+/// The outcome of a confirmation prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmDecision {
+    Approved,
+    Denied,
+    /// Prompt ended without a user answer (expired, superseded, timed out).
+    /// Must not veto an answer from another device.
+    NoDecision,
+}
+
+#[derive(Debug)]
+enum ConfirmEvent {
+    Invoked { id: u32, action: String },
+    Closed { id: u32, reason: u32 },
+}
+
+/// Resolve a confirmation from a single ordered stream of notification events.
+///
+/// A click emits ActionInvoked then NotificationClosed, and D-Bus preserves
+/// per-sender order — but only within one stream. So a close seen before any
+/// action means nobody clicked. Two separate signal subscriptions lose that
+/// ordering; do not go back to them.
+async fn await_decision<S>(mut events: S, id: u32) -> ConfirmDecision
+where
+    S: futures_util::Stream<Item = ConfirmEvent> + Unpin,
+{
+    use futures_util::StreamExt;
+
+    while let Some(ev) = events.next().await {
+        match ev {
+            ConfirmEvent::Invoked { id: eid, action } if eid == id => {
+                return if action == "approve" {
+                    ConfirmDecision::Approved
+                } else {
+                    ConfirmDecision::Denied
+                };
+            }
+            ConfirmEvent::Closed { id: eid, reason } if eid == id => {
+                // Swipe-away is a "no"; expiry or programmatic close is not.
+                return if reason == REASON_DISMISSED {
+                    ConfirmDecision::Denied
+                } else {
+                    ConfirmDecision::NoDecision
+                };
+            }
+            _ => {} // another notification's event
+        }
+    }
+    ConfirmDecision::NoDecision // bus connection died
+}
+
 /// Show a yes/no confirmation on the client and block until the user answers.
 ///
-/// Returns `Ok(true)` when approved, and `Ok(false)` when denied, dismissed, or
-/// the prompt times out (fail-safe: an unanswered prompt is a denial). Built on
-/// `org.freedesktop.Notifications` actions + the `ActionInvoked` signal.
+/// Built on `org.freedesktop.Notifications` actions; see [`await_decision`]
+/// for why the signals must come through a single stream.
 pub async fn confirm(
     message: &str,
     title: Option<&str>,
     host: Option<&str>,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<ConfirmDecision> {
     use futures_util::StreamExt;
 
     let connection = Connection::session()
@@ -166,16 +221,18 @@ pub async fn confirm(
         .await
         .context("failed to build Notifications proxy")?;
 
-    // Subscribe to the signals BEFORE sending the notification, so a fast click
-    // can't land before we start listening.
-    let mut invoked = proxy
-        .receive_action_invoked()
+    // Subscribe BEFORE sending the notification, so a fast click can't land
+    // before we start listening. One rule, one stream: bus-delivery order.
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .interface("org.freedesktop.Notifications")
+        .context("bad interface in match rule")?
+        .path("/org/freedesktop/Notifications")
+        .context("bad path in match rule")?
+        .build();
+    let messages = zbus::MessageStream::for_match_rule(rule, &connection, Some(64))
         .await
-        .context("failed to subscribe to ActionInvoked")?;
-    let mut closed = proxy
-        .receive_notification_closed()
-        .await
-        .context("failed to subscribe to NotificationClosed")?;
+        .context("failed to subscribe to notification signals")?;
 
     let app_name = match host {
         Some(h) => format!("subportal@{h}"),
@@ -203,37 +260,103 @@ pub async fn confirm(
         .await
         .context("failed to show confirmation notification")?;
 
-    // Wait for the matching action or close, bounded so a forgotten prompt
-    // eventually resolves as a denial.
-    let decision = tokio::time::timeout(CONFIRM_TIMEOUT, async {
-        loop {
-            tokio::select! {
-                Some(sig) = invoked.next() => {
-                    if let Ok(args) = sig.args() {
-                        if args.id == id {
-                            return args.action_key == "approve";
-                        }
-                    }
-                }
-                Some(sig) = closed.next() => {
-                    if let Ok(args) = sig.args() {
-                        if args.id == id {
-                            return false;
-                        }
-                    }
-                }
-                else => return false,
+    let events = std::pin::pin!(messages.filter_map(|msg| async move {
+        let msg = msg.ok()?;
+        let header = msg.header();
+        match header.member()?.as_str() {
+            "ActionInvoked" => {
+                let (id, action): (u32, String) = msg.body().deserialize().ok()?;
+                Some(ConfirmEvent::Invoked { id, action })
             }
+            "NotificationClosed" => {
+                let (id, reason): (u32, u32) = msg.body().deserialize().ok()?;
+                Some(ConfirmEvent::Closed { id, reason })
+            }
+            _ => None,
         }
-    })
-    .await;
+    }));
+
+    let decision = tokio::time::timeout(CONFIRM_TIMEOUT, await_decision(events, id)).await;
 
     match decision {
-        Ok(approved) => Ok(approved),
+        Ok(decision) => Ok(decision),
         Err(_) => {
-            // Timed out: dismiss the stale prompt and treat as denied.
+            // Timed out: clear the stale prompt.
             let _ = proxy.close_notification(id).await;
-            Ok(false)
+            Ok(ConfirmDecision::NoDecision)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::stream;
+    use ConfirmDecision::{Approved, Denied, NoDecision};
+
+    const REASON_EXPIRED: u32 = 1;
+    const REASON_CLOSED_BY_CALL: u32 = 3;
+
+    fn invoked(id: u32, action: &str) -> ConfirmEvent {
+        ConfirmEvent::Invoked {
+            id,
+            action: action.into(),
+        }
+    }
+
+    fn closed(id: u32, reason: u32) -> ConfirmEvent {
+        ConfirmEvent::Closed { id, reason }
+    }
+
+    async fn decide(events: Vec<ConfirmEvent>) -> ConfirmDecision {
+        await_decision(stream::iter(events), 1).await
+    }
+
+    #[tokio::test]
+    async fn approve_action_approves() {
+        assert_eq!(decide(vec![invoked(1, "approve")]).await, Approved);
+    }
+
+    #[tokio::test]
+    async fn deny_action_denies() {
+        assert_eq!(decide(vec![invoked(1, "deny")]).await, Denied);
+    }
+
+    /// The original bug: a click's own close event must never outrun the click.
+    #[tokio::test]
+    async fn action_wins_over_its_trailing_close() {
+        let d = decide(vec![invoked(1, "approve"), closed(1, REASON_DISMISSED)]).await;
+        assert_eq!(d, Approved);
+    }
+
+    #[tokio::test]
+    async fn user_dismissal_denies() {
+        assert_eq!(decide(vec![closed(1, REASON_DISMISSED)]).await, Denied);
+    }
+
+    #[tokio::test]
+    async fn expiry_is_no_decision() {
+        assert_eq!(decide(vec![closed(1, REASON_EXPIRED)]).await, NoDecision);
+    }
+
+    #[tokio::test]
+    async fn programmatic_close_is_no_decision() {
+        assert_eq!(decide(vec![closed(1, REASON_CLOSED_BY_CALL)]).await, NoDecision);
+    }
+
+    #[tokio::test]
+    async fn other_notification_events_are_ignored() {
+        let d = decide(vec![
+            invoked(2, "approve"),
+            closed(2, REASON_DISMISSED),
+            invoked(1, "deny"),
+        ])
+        .await;
+        assert_eq!(d, Denied);
+    }
+
+    #[tokio::test]
+    async fn stream_end_is_no_decision() {
+        assert_eq!(decide(vec![]).await, NoDecision);
     }
 }

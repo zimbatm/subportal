@@ -9,6 +9,7 @@ import io.subportal.android.notifications.NotificationHelper
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import uniffi.subportal_android_core.ConfirmDecision
 import uniffi.subportal_android_core.SubportalCallback
 
 /**
@@ -48,13 +49,13 @@ class SubportalCallbackImpl(
     }
 
     // Blocks the calling Rust thread until the user answers. The server races
-    // this across every capable device; first answer wins.
-    override fun onConfirm(message: String, title: String?, host: String): Boolean {
+    // this across devices; only a real user answer decides.
+    override fun onConfirm(message: String, title: String?, host: String): ConfirmDecision {
         Log.i(TAG, "onConfirm: $message from $host")
-        val approved = ConfirmManager.awaitDecision(context, message, title, host)
+        val decision = ConfirmManager.awaitDecision(context, message, title, host)
         val summary = title?.let { "$it: $message" } ?: message
-        EventLog.record(host, EventType.Confirm, summary, approved)
-        return approved
+        EventLog.record(host, EventType.Confirm, summary, decision == ConfirmDecision.APPROVED)
+        return decision
     }
 
     override fun onNotify(
