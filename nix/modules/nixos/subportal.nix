@@ -69,6 +69,32 @@ in
         }";
         Restart = "on-failure";
         RestartSec = 5;
+
+        # Sandbox by default; every value is a mkDefault so a consumer can
+        # loosen what its deployment needs. No ProtectHome: file transfer
+        # reads the user's home by design. AF_NETLINK stays: iroh's netmon
+        # watches interface changes and crashes without it ("Address family
+        # not supported by protocol").
+        NoNewPrivileges = lib.mkDefault true;
+        LockPersonality = lib.mkDefault true;
+        PrivateDevices = lib.mkDefault true;
+        PrivateTmp = lib.mkDefault true;
+        ProtectClock = lib.mkDefault true;
+        ProtectControlGroups = lib.mkDefault true;
+        ProtectKernelLogs = lib.mkDefault true;
+        ProtectKernelModules = lib.mkDefault true;
+        ProtectKernelTunables = lib.mkDefault true;
+        ProtectSystem = lib.mkDefault "strict";
+        RestrictAddressFamilies = lib.mkDefault [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+          "AF_NETLINK"
+        ];
+        RestrictNamespaces = lib.mkDefault true;
+        RestrictRealtime = lib.mkDefault true;
+        RestrictSUIDSGID = lib.mkDefault true;
+        SystemCallArchitectures = lib.mkDefault "native";
       };
     };
   };
