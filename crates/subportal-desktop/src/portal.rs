@@ -15,7 +15,11 @@ use zbus::zvariant::Value;
 use zbus::Connection;
 
 /// How long a confirmation prompt waits for the user before giving up.
-const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+///
+/// The caller had no terminal to ask in, so nobody is usually at one either;
+/// two minutes expired before the prompt was seen. Bounded at all so an
+/// unanswered prompt cannot pin the request open.
+const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
 
 /// `NotificationClosed` reason code for "dismissed by the user" — the only
 /// close that is an actual answer. 1 = expired, 3 = CloseNotification call.

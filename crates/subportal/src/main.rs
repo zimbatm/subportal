@@ -52,7 +52,8 @@ enum Command {
     },
     /// Ask the user a yes/no question on the client and wait for the answer
     ///
-    /// Exit code: 0 = approved, 1 = denied/dismissed, 2 = could not ask.
+    /// Exit code: 0 = approved, 1 = denied/dismissed, 2 = could not ask,
+    /// 3 = asked, but nobody answered before the prompt expired.
     Confirm {
         /// The question / message to show
         message: String,
@@ -266,9 +267,11 @@ async fn main() -> ExitCode {
                     eprintln!("subportal: denied by the user");
                     ExitCode::from(1)
                 }
+                // Abstained, not refused. Exit 1 would turn away-from-the-desk
+                // into "no".
                 Err(ClientError::Protocol(SubportalError::NoDecision)) => {
                     eprintln!("subportal: prompt expired without an answer");
-                    ExitCode::from(1)
+                    ExitCode::from(3)
                 }
                 Err(ClientError::DaemonUnreachable) => {
                     daemon_unreachable_error(&client);
