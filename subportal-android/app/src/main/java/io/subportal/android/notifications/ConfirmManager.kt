@@ -26,7 +26,8 @@ object ConfirmManager {
     const val EXTRA_ID = "confirm_id"
     const val EXTRA_APPROVED = "approved"
 
-    private const val TIMEOUT_MS = 60_000L
+    // Matches the desktop bound; a minute expired before the prompt was seen.
+    private const val TIMEOUT_MS = 900_000L
 
     // Android notification IDs for confirm prompts, kept clear of NotificationHelper's range.
     private val nextAndroidId = AtomicInteger(9000)

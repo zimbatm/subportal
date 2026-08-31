@@ -500,7 +500,12 @@ impl SubportalCore {
         let request: Request = serde_json::from_value(value)?;
         info!("request from {host}: {request:?}");
 
-        match self.handle_request(request, host, notification_id) {
+        // Confirm blocks in here for up to fifteen minutes. Hand the worker
+        // back, or pending prompts starve the runtime delivering their answers.
+        let outcome =
+            tokio::task::block_in_place(|| self.handle_request(request, host, notification_id));
+
+        match outcome {
             Ok(response) => {
                 let wire_resp = response.to_wire();
                 transport::send_response(&mut send, &wire_resp).await?;
