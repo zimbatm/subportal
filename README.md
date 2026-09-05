@@ -70,7 +70,7 @@ The [documentation](docs/index.md) is organized using the
 | Capability   | Direction        | Description                                    |
 | ------------ | ---------------- | ---------------------------------------------- |
 | **OpenURI**  | server -> client | Open a URL in the client's browser             |
-| **OpenFile** | server -> client | Transfer a file (<5 MB) and open it on client  |
+| **OpenFile** | server -> client | Transfer a file (up to 5 MB) and open it on client |
 | **Notify**   | server -> client | Show a desktop notification                    |
 | **Ping**     | server -> client | Check connectivity, discover capabilities      |
 
