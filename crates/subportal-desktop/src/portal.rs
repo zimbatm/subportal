@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::os::fd::AsFd;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Context;
 use ashpd::desktop::open_uri::OpenFileRequest;
@@ -21,16 +22,37 @@ use zbus::Connection;
 /// unanswered prompt cannot pin the request open.
 const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
 
+/// Whether a URI open goes through the portal's prompt.
+///
+/// `ask` is what makes xdg-desktop-portal show its "Open With..." chooser, and
+/// it does so even when the user has a default handler for the scheme. On a
+/// desktop that only ever talks to its own servers that prompt is pure friction,
+/// so `--no-ask-uri` trades it for opening straight in the default application.
+///
+/// Only URIs: a file open carries content from the server, and its dialog is
+/// the one place the name, size, and MIME type are shown before opening.
+static ASK_URI: AtomicBool = AtomicBool::new(true);
+
+/// Set whether a URI open prompts. Call once at startup.
+pub fn set_ask_uri(ask: bool) {
+    ASK_URI.store(ask, Ordering::Relaxed);
+}
+
+fn ask_uri() -> bool {
+    ASK_URI.load(Ordering::Relaxed)
+}
+
 /// `NotificationClosed` reason code for "dismissed by the user" — the only
 /// close that is an actual answer. 1 = expired, 3 = CloseNotification call.
 /// https://specifications.freedesktop.org/notification-spec/latest/protocol.html#signal-notification-closed
 const REASON_DISMISSED: u32 = 2;
 
-/// Open a URI in the user's default application, showing a confirmation dialog.
+/// Open a URI in the user's default application, showing a confirmation dialog
+/// unless [`set_ask_uri`] disabled it.
 pub async fn open_uri(uri: &str) -> anyhow::Result<()> {
     let url = url::Url::parse(uri).context("invalid URI")?;
     OpenFileRequest::default()
-        .ask(true)
+        .ask(ask_uri())
         .send_uri(&url)
         .await
         .context("xdg-desktop-portal OpenURI failed")?;
