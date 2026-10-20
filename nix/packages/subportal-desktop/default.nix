@@ -6,7 +6,7 @@
 }:
 pkgs.rustPlatform.buildRustPackage {
   inherit pname;
-  version = "0.1.0";
+  version = "0.2.0";
 
   src = pkgs.lib.sourceByRegex flake [
     "Cargo\.toml"

@@ -1,6 +1,6 @@
 [package]
 name = "subportal"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Explicit CLI for all capabilities, status, and drain"
 
