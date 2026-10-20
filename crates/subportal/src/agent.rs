@@ -29,7 +29,7 @@ pub async fn run(relay_url: Option<&str>) -> Result<()> {
     info!("Unix socket: {}", server.path().display());
 
     // Create iroh endpoint
-    let mut builder = iroh::Endpoint::builder()
+    let mut builder = subportal_iroh::endpoint::builder()
         .secret_key(key)
         .alpns(vec![ALPN.to_vec()]);
 

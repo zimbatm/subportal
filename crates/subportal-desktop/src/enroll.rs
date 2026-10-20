@@ -26,7 +26,7 @@ pub async fn enroll_from_stdin() -> Result<()> {
     let key = load_or_generate_keypair(&dir.join(KEYPAIR_FILE)).await?;
 
     // Try to connect and enroll
-    let endpoint = iroh::Endpoint::builder()
+    let endpoint = subportal_iroh::endpoint::builder()
         .secret_key(key)
         .bind()
         .await
