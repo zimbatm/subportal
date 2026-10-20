@@ -128,7 +128,7 @@ async fn run(relay_url: Option<&str>) -> Result<()> {
 
     // Create endpoint eagerly even with zero servers, so we are ready for
     // SIGHUP-triggered reloads after enrollment.
-    let mut builder = iroh::Endpoint::builder().secret_key(key);
+    let mut builder = subportal_iroh::endpoint::builder().secret_key(key);
 
     if let Some(url) = relay_url {
         info!("using custom relay: {url}");

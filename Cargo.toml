@@ -28,7 +28,7 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-iroh = "0.96"
+iroh = { version = "1.4", features = ["platform-verifier"] }
 rand = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"

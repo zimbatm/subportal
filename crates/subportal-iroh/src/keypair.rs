@@ -16,7 +16,7 @@ pub async fn load_or_generate_keypair(path: &Path) -> anyhow::Result<SecretKey> 
             .map_err(|_| anyhow::anyhow!("keypair file has invalid length"))?;
         Ok(SecretKey::from_bytes(&bytes))
     } else {
-        let key = SecretKey::generate(&mut rand::rng());
+        let key = SecretKey::generate();
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }

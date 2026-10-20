@@ -314,7 +314,7 @@ impl SubportalCore {
             }
         };
 
-        let endpoint = match iroh::Endpoint::builder()
+        let endpoint = match subportal_iroh::endpoint::builder()
             .transport_config(client_transport_config())
             .secret_key(key)
             .bind()
@@ -626,7 +626,7 @@ impl SubportalCore {
 
         let key = load_or_generate_keypair(&self.data_dir.join(KEYPAIR_FILE)).await?;
 
-        let endpoint = iroh::Endpoint::builder()
+        let endpoint = subportal_iroh::endpoint::builder()
             .secret_key(key)
             .bind()
             .await
