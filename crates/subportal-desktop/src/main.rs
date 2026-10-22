@@ -43,6 +43,9 @@ enum Command {
         /// Use a custom relay server URL (e.g. https://relay.example.com)
         #[arg(long)]
         relay_url: Option<String>,
+        /// Open forwarded URIs in the default application instead of prompting
+        #[arg(long)]
+        no_ask_uri: bool,
     },
     /// Enroll with a server (reads ticket JSON from stdin)
     Enroll,
@@ -59,8 +62,17 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    match cli.command.unwrap_or(Command::Run { relay_url: None }) {
-        Command::Run { relay_url } => run(relay_url.as_deref()).await,
+    match cli.command.unwrap_or(Command::Run {
+        relay_url: None,
+        no_ask_uri: false,
+    }) {
+        Command::Run {
+            relay_url,
+            no_ask_uri,
+        } => {
+            portal::set_ask_uri(!no_ask_uri);
+            run(relay_url.as_deref()).await
+        }
         Command::Enroll => enroll::enroll_from_stdin().await,
         Command::Forget { name_or_id } => forget(&name_or_id).await,
     }

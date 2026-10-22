@@ -6,7 +6,7 @@ subportal-desktop - subportal client daemon
 
 # SYNOPSIS
 
-subportal-desktop [*run*]
+subportal-desktop [*run*] [*--no-ask-uri*]
 
 subportal-desktop *enroll*
 
@@ -24,6 +24,18 @@ xdg-desktop-portal D-Bus interface.
 *run*
 	Connect to all enrolled servers and handle requests. This is the
 	default command when none is specified.
+
+	Options:
+
+	*--relay-url* _URL_
+		Use a custom relay server URL.
+
+	*--no-ask-uri*
+		Open a forwarded URI in the default application instead of
+		prompting. The portal shows its "Open With..." chooser even
+		when a default handler is configured, so this is the way to
+		bypass it on a desktop that trusts its enrolled servers.
+		File opens still prompt.
 
 *enroll*
 	Enroll with a server by reading a ticket from stdin. The ticket is
@@ -45,7 +57,7 @@ xdg-desktop-portal D-Bus interface.
 
 *OpenURI*
 	Open a URL in the user's preferred application. A confirmation dialog
-	is shown before opening.
+	is shown before opening, unless *--no-ask-uri* is given.
 
 *OpenFile*
 	Receive a base64-encoded file (up to 5 MB), write it to
